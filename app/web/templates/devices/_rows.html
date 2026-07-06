@@ -1,0 +1,64 @@
+<div id="device-rows">
+{% if devices %}
+<div class="bg-white rounded shadow overflow-x-auto">
+  <div class="px-4 py-2 text-xs text-gray-400 border-b border-gray-100">
+    {{ devices | length }} {{ t.device.list.col_name | lower }}{{ 's' if devices | length != 1 else '' }}
+    {% if any_filter %} {{ t.device.list.matching }}{% endif %}
+  </div>
+  <table class="min-w-full text-sm">
+    <thead class="bg-gray-100 text-gray-600 uppercase text-xs">
+      <tr>
+        <th class="px-4 py-3 text-left">{{ t.device.list.col_name }}</th>
+        <th class="px-4 py-3 text-left">{{ t.device.list.col_vendor }}</th>
+        <th class="px-4 py-3 text-left">{{ t.device.list.col_product }}</th>
+        <th class="px-4 py-3 text-left">{{ t.device.list.col_room }}</th>
+        <th class="px-4 py-3 text-left">{{ t.device.list.col_comms }}</th>
+        <th class="px-4 py-3 text-left">{{ t.device.list.col_status }}</th>
+      </tr>
+    </thead>
+    <tbody class="divide-y divide-gray-100">
+      {% for d in devices %}
+      <tr class="hover:bg-gray-50">
+        <td class="px-4 py-3 font-medium">
+          <a href="{{ url('/devices/' + d.id) }}" class="text-blue-600 hover:underline">{{ d.name }}</a>
+        </td>
+        <td class="px-4 py-3 text-gray-600">{{ d.vendor or "-" }}</td>
+        <td class="px-4 py-3 text-gray-600">{{ d.product or "-" }}</td>
+        <td class="px-4 py-3 text-gray-600">{{ d.room or "-" }}</td>
+        <td class="px-4 py-3">
+          {% set comms = device_comms[d.id] %}
+          <span class="icon-comms text-gray-600 dark:text-gray-300">
+            {% if d.protocol and d.protocol.icon %}<span class="{{ d.protocol.icon }}" role="img" aria-label="{{ d.protocol.label }}" title="{{ d.protocol.label }} commissioning"></span>{% endif %}
+            {% if 'wifi' in (d.network_type or []) %}<span class="icon-wifi" role="img" aria-label="Wi-Fi" title="Wi-Fi"></span>{% endif %}
+            {% if 'thread' in (d.network_type or []) %}<span class="icon-thread" role="img" aria-label="Thread" title="Thread"></span>{% endif %}
+            {% if 'ethernet' in (d.network_type or []) %}<span class="icon-ethernet" role="img" aria-label="Ethernet" title="Ethernet"></span>{% endif %}
+            {% if 'bluetooth' in (d.network_type or []) %}<span class="icon-bluetooth" role="img" aria-label="Bluetooth" title="Bluetooth"></span>{% endif %}
+            {% if comms.has_onboarding %}<span class="icon-qr-code" role="img" aria-label="Onboarding info stored" title="Onboarding info stored"></span>{% endif %}
+          </span>
+        </td>
+        <td class="px-4 py-3">
+          <span class="px-2 py-0.5 rounded text-xs font-medium
+            {% if d.status.value == 'active' %}bg-green-100 text-green-700
+            {% elif d.status.value == 'retired' %}bg-gray-100 text-gray-500
+            {% elif d.status.value == 'hidden' %}bg-gray-100 text-gray-400 line-through
+            {% else %}bg-yellow-100 text-yellow-700{% endif %}">
+            {{ t.device.list['status_' ~ d.status.value] }}
+          </span>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+<div class="text-center py-16 text-gray-400">
+  {% if any_filter %}
+  <p class="text-lg mb-4">{{ t.device.list.filtered_empty }}</p>
+  <a href="{{ url('/devices') }}" class="text-blue-600 hover:underline">{{ t.device.list.clear_all_filters }}</a>
+  {% else %}
+  <p class="text-lg mb-4">{{ t.device.list.empty }}</p>
+  <a href="{{ url('/devices/new') }}" class="text-blue-600 hover:underline">{{ t.device.list.empty_add }}</a>
+  {% endif %}
+</div>
+{% endif %}
+</div>

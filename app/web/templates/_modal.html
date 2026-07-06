@@ -1,0 +1,20 @@
+<div id="mr-modal"
+     class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/50"
+     role="dialog" aria-modal="true" aria-labelledby="mr-modal-title"
+     data-label-confirm="{{ t.modal.confirm }}"
+     data-label-cancel="{{ t.modal.cancel }}"
+     data-label-delete="{{ t.modal.delete }}">
+  <div class="bg-white rounded-lg shadow-xl p-6 max-w-md w-full mx-4">
+    <h3 id="mr-modal-title" class="text-lg font-semibold mb-3"></h3>
+    <div id="mr-modal-body" class="text-sm text-gray-700 mb-5"></div>
+    <div class="flex justify-end gap-3">
+      <button id="mr-modal-cancel" type="button"
+              class="px-4 py-2 text-sm rounded border border-gray-300 hover:bg-gray-50">
+        {{ t.modal.cancel }}
+      </button>
+      <button id="mr-modal-confirm" type="button" class="px-4 py-2 text-sm rounded">
+        {{ t.modal.confirm }}
+      </button>
+    </div>
+  </div>
+</div>

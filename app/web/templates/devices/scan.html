@@ -1,0 +1,13 @@
+{% extends "base.html" %}
+{% block title %}{{ t.device.scan.title }} - {{ device.name }} - {{ t.nav.brand }}{% endblock %}
+{% block content %}
+<div class="mb-6">
+  <a href="{{ url('/devices/' + device.id) }}" class="text-gray-400 hover:text-gray-600 text-sm">← {{ device.name }}</a>
+  <h1 class="text-2xl font-bold mt-1">{{ t.device.scan.title }}</h1>
+  <p class="text-sm text-gray-500 mt-1">{{ t.device.scan.description }}</p>
+</div>
+
+{% set scan_mode = "edit" %}
+{% set scan_action = url('/devices/' + device.id + '/scan') %}
+{% include "devices/_scan_block.html" %}
+{% endblock %}

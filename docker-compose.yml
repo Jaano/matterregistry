@@ -1,0 +1,27 @@
+services:
+  matterregistry:
+    image: ${DOCKER_IMAGE:-ghcr.io/jaano/matterregistry}:latest
+    container_name: matterregistry
+    # Host networking is required only for mDNS HomeKit discovery (UDP 5353
+    # multicast can't reach a bridged container). If you don't use discovery,
+    # drop network_mode and publish the port instead:
+    #   ports:
+    #     - "5591:5591"
+    network_mode: host
+    build:
+      context: .
+      dockerfile: Dockerfile
+    volumes:
+      - ./data:/config
+    environment:
+      - MR_LOG_LEVEL=info # trace|debug|info|warning|error|critical
+      - PYTHON_MATTER_SERVER=${PYTHON_MATTER_SERVER:-}
+      - OTBR_URL=${OTBR_URL:-}
+      - HA_CORE_URL=${HA_CORE_URL:-}
+      - HA_CORE_TOKEN=${HA_CORE_TOKEN:-}
+      # Auto-sync interval in seconds (default 600 = 10 min).
+      # Set to 0 for a one-time startup sync only; -1 to disable all auto-sync.
+      - MR_INTEGRATION_SYNC_INTERVAL=${MR_INTEGRATION_SYNC_INTERVAL:-600}
+      # mDNS HomeKit discovery - opt-in, requires host networking above.
+      - MDNS_ENABLED=${MDNS_ENABLED:-false}
+    restart: unless-stopped

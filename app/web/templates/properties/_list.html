@@ -1,0 +1,22 @@
+<div id="property-list">
+{% if properties %}
+<table class="min-w-full text-sm">
+  <thead class="bg-gray-50 text-gray-500 text-xs uppercase">
+    <tr>
+      <th class="px-3 py-2 text-left">{{ t.properties.col_type }}</th>
+      <th class="px-3 py-2 text-left">{{ t.properties.col_value }}</th>
+      <th class="px-3 py-2 text-left">{{ t.properties.col_label }}</th>
+      <th class="px-3 py-2 text-left">{{ t.properties.col_source }}</th>
+      <th class="px-3 py-2 text-left"></th>
+    </tr>
+  </thead>
+  <tbody class="divide-y divide-gray-100">
+    {% for c in properties %}
+    {% include "properties/_row.html" %}
+    {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p class="text-sm text-gray-400 py-2">{{ t.properties.empty }}</p>
+{% endif %}
+</div>

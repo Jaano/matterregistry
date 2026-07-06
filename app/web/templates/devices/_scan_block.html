@@ -1,0 +1,382 @@
+{# _scan_block.html - reusable scan + manual-entry block.
+   Context variables expected:
+     scan_mode:   "new"  → capture payload into parent form's hidden input #new-device-qr-payload
+                  "edit" → POST directly to scan_action URL
+     scan_action: (edit mode only) form action URL
+#}
+
+<!-- HTTPS guard -->
+<div id="https-warning" class="hidden mb-4 p-4 bg-yellow-50 border border-yellow-200 rounded text-sm text-yellow-800">
+  <strong>{{ t.scan_block.https_title }}</strong> {{ t.scan_block.https_body }}
+</div>
+
+{% if scan_mode == "new" %}
+<!-- New-device mode: QR captured indicator -->
+<div id="qr-captured" class="hidden mb-4 p-3 bg-green-50 border border-green-200 rounded text-sm text-green-700">
+  <strong>{{ t.scan_block.captured_title }}</strong> {{ t.scan_block.captured_suffix }}
+  <span id="qr-captured-preview" class="ml-2 font-mono text-xs text-gray-500 break-all"></span>
+</div>
+{% endif %}
+
+<!-- Camera reader -->
+<div class="bg-white rounded shadow p-5 mb-4">
+  <h2 class="text-sm font-semibold text-gray-500 uppercase mb-3">{{ t.scan_block.camera_heading }}</h2>
+  <div id="reader" class="w-full max-w-sm mx-auto"></div>
+  <div id="camera-error" class="hidden mt-3 p-3 bg-red-50 border border-red-200 rounded text-sm text-red-700"></div>
+  <div class="mt-3 flex gap-2">
+    <button id="btn-start" type="button"
+            class="bg-blue-600 text-white px-4 py-2 rounded text-sm hover:bg-blue-700">
+      {{ t.scan_block.start_camera }}
+    </button>
+    <button id="btn-stop" type="button"
+            class="hidden border border-gray-300 px-4 py-2 rounded text-sm hover:bg-gray-50">
+      {{ t.scan_block.stop_camera }}
+    </button>
+  </div>
+</div>
+
+<!-- Manual entry -->
+<div class="bg-white rounded shadow p-5 mb-6">
+  <h2 class="text-sm font-semibold text-gray-500 uppercase mb-3">{{ t.scan_block.manual_heading }}</h2>
+
+  <!-- Tab bar -->
+  <div class="flex border-b border-gray-200 mb-4 text-sm flex-wrap">
+    <button type="button" data-tab="payload"
+            class="tab-btn px-4 py-2 -mb-px border-b-2 border-blue-600 text-blue-600 font-medium">{{ t.scan_block.tab_payload }}</button>
+    {% if scan_mode == "edit" %}
+    <button type="button" data-tab="matter-code"
+            class="tab-btn px-4 py-2 -mb-px border-b-2 border-transparent text-gray-500 hover:text-gray-700">{{ t.scan_block.tab_matter_code }}</button>
+    <button type="button" data-tab="matter-fields"
+            class="tab-btn px-4 py-2 -mb-px border-b-2 border-transparent text-gray-500 hover:text-gray-700">{{ t.scan_block.tab_matter_fields }}</button>
+    <button type="button" data-tab="homekit-code"
+            class="tab-btn px-4 py-2 -mb-px border-b-2 border-transparent text-gray-500 hover:text-gray-700">{{ t.scan_block.tab_homekit_code }}</button>
+    <button type="button" data-tab="homekit-fields"
+            class="tab-btn px-4 py-2 -mb-px border-b-2 border-transparent text-gray-500 hover:text-gray-700">{{ t.scan_block.tab_homekit_fields }}</button>
+    {% endif %}
+  </div>
+
+  <!-- Tab A: QR payload paste -->
+  <div id="tab-payload" class="tab-panel">
+    {% if scan_mode == "edit" %}
+    <form method="post" action="{{ scan_action }}" id="form-payload">
+    {% endif %}
+      <label class="block text-xs text-gray-500 mb-1">{{ t.scan_block.payload_label }}</label>
+      <input type="text" name="payload" id="manual-payload-input" placeholder="MT:... or X-HM://..."
+             {% if scan_mode == "edit" %}required{% endif %}
+             class="w-full border border-gray-300 rounded px-3 py-2 text-sm font-mono mb-3">
+      {% if scan_mode == "new" %}
+      <button type="button" id="btn-capture-payload"
+              class="bg-blue-600 text-white px-4 py-2 rounded text-sm hover:bg-blue-700">
+        {{ t.scan_block.capture_btn }}
+      </button>
+      {% else %}
+      <button type="submit"
+              class="bg-blue-600 text-white px-4 py-2 rounded text-sm hover:bg-blue-700">{{ t.scan_block.save_btn }}</button>
+      {% endif %}
+    {% if scan_mode == "edit" %}
+    </form>
+    {% endif %}
+  </div>
+
+  {% if scan_mode == "edit" %}
+  <!-- Tab B: Matter 11-digit manual code -->
+  <div id="tab-matter-code" class="tab-panel hidden">
+    <form method="post" action="{{ scan_action }}" id="form-matter-code">
+      <label class="block text-xs text-gray-500 mb-1">{{ t.scan_block.matter_code_label }}</label>
+      <input type="text" name="manual_code" id="manual-code-input"
+             placeholder="12345678901" maxlength="11" pattern="\d{11}"
+             class="w-full border border-gray-300 rounded px-3 py-2 text-sm font-mono mb-1"
+             autocomplete="off">
+      <p id="manual-code-hint" class="text-xs text-gray-400 mb-3">{{ t.scan_block.matter_code_hint }}</p>
+      <input type="hidden" name="protocol" value="matter">
+      <button type="submit" id="manual-submit"
+              class="bg-blue-600 text-white px-4 py-2 rounded text-sm hover:bg-blue-700">{{ t.scan_block.save_btn }}</button>
+    </form>
+  </div>
+
+  <!-- Tab C: Matter individual fields -->
+  <div id="tab-matter-fields" class="tab-panel hidden">
+    <form method="post" action="{{ scan_action }}" id="form-matter-fields">
+      <div class="grid grid-cols-2 gap-3 mb-3">
+        <div>
+          <label class="block text-xs text-gray-500 mb-1">{{ t.scan_block.matter_vid_label }}</label>
+          <input type="text" name="vid_hex" placeholder="FFF1"
+                 class="w-full border border-gray-300 rounded px-3 py-2 text-sm font-mono">
+        </div>
+        <div>
+          <label class="block text-xs text-gray-500 mb-1">{{ t.scan_block.matter_vid_label }}</label>
+          <input type="text" name="vid_hex" placeholder="FFF1"
+                 class="w-full border border-gray-300 rounded px-3 py-2 text-sm font-mono">
+        </div>
+        <div>
+          <label class="block text-xs text-gray-500 mb-1">{{ t.scan_block.matter_pid_label }}</label>
+          <input type="text" name="pid_hex" placeholder="8001"
+                 class="w-full border border-gray-300 rounded px-3 py-2 text-sm font-mono">
+        </div>
+        <div>
+          <label class="block text-xs text-gray-500 mb-1">{{ t.scan_block.matter_disc_label }}</label>
+          <input type="number" name="discriminator" min="0" max="4095" placeholder="3840"
+                 required
+                 class="w-full border border-gray-300 rounded px-3 py-2 text-sm font-mono">
+        </div>
+        <div>
+          <label class="block text-xs text-gray-500 mb-1">{{ t.scan_block.matter_passcode_label }}</label>
+          <input type="number" name="passcode" min="1" max="99999998" placeholder="20202021"
+                 required
+                 class="w-full border border-gray-300 rounded px-3 py-2 text-sm font-mono">
+        </div>
+      </div>
+      <input type="hidden" name="protocol" value="matter">
+      <button type="submit"
+              class="bg-blue-600 text-white px-4 py-2 rounded text-sm hover:bg-blue-700">{{ t.scan_block.save_btn }}</button>
+    </form>
+  </div>
+
+  <!-- Tab D: HomeKit 8-digit manual code -->
+  <div id="tab-homekit-code" class="tab-panel hidden">
+    <form method="post" action="{{ scan_action }}" id="form-homekit-code">
+      <label class="block text-xs text-gray-500 mb-1">{{ t.scan_block.hk_code_label }}</label>
+      <input type="text" name="manual_code" id="homekit-code-input"
+             placeholder="123-45-678" maxlength="10" pattern="\d{3}-?\d{2}-?\d{3}"
+             class="w-full border border-gray-300 rounded px-3 py-2 text-sm font-mono mb-1"
+             autocomplete="off">
+      <p id="homekit-code-hint" class="text-xs text-gray-400 mb-3">{{ t.scan_block.hk_code_hint }}</p>
+      <input type="hidden" name="protocol" value="homekit">
+      <button type="submit" id="homekit-submit"
+              class="bg-blue-600 text-white px-4 py-2 rounded text-sm hover:bg-blue-700">{{ t.scan_block.save_btn }}</button>
+    </form>
+  </div>
+
+  <!-- Tab E: HomeKit individual fields -->
+  <div id="tab-homekit-fields" class="tab-panel hidden">
+    <form method="post" action="{{ scan_action }}" id="form-homekit-fields">
+      <div class="grid grid-cols-2 gap-3 mb-3">
+        <div>
+          <label class="block text-xs text-gray-500 mb-1">{{ t.scan_block.hk_setup_id_label }}</label>
+          <input type="text" name="discriminator" minlength="4" maxlength="4" placeholder="1A2B"
+                 required
+                 class="w-full border border-gray-300 rounded px-3 py-2 text-sm font-mono"
+                 autocomplete="off">
+        </div>
+        <div>
+          <label class="block text-xs text-gray-500 mb-1">{{ t.scan_block.hk_setup_code_label }}</label>
+          <input type="text" name="passcode" minlength="8" maxlength="8" placeholder="12344321"
+                 required
+                 class="w-full border border-gray-300 rounded px-3 py-2 text-sm font-mono"
+                 autocomplete="off">
+        </div>
+        <div>
+          <label class="block text-xs text-gray-500 mb-1">{{ t.scan_block.hk_category_label }}</label>
+          <input type="number" name="homekit_category" min="0" max="255" placeholder="5"
+                 class="w-full border border-gray-300 rounded px-3 py-2 text-sm font-mono">
+        </div>
+        <div>
+          <label class="block text-xs text-gray-500 mb-1">{{ t.scan_block.hk_category_name_label }}</label>
+          <input type="text" disabled value="" id="hk-cat-hint"
+                 class="w-full border border-gray-100 rounded px-3 py-2 text-sm text-gray-400 bg-gray-50 font-mono">
+        </div>
+      </div>
+      <input type="hidden" name="protocol" value="homekit">
+      <button type="submit"
+              class="bg-blue-600 text-white px-4 py-2 rounded text-sm hover:bg-blue-700">{{ t.scan_block.save_btn }}</button>
+    </form>
+  </div>
+  {% endif %}
+</div>
+
+{% if scan_mode == "edit" %}
+<!-- Edit mode: hidden form for camera auto-submit -->
+<form id="scan-result-form" method="post" action="{{ scan_action }}" class="hidden">
+  <input type="hidden" name="payload" id="scan-payload-value">
+</form>
+{% endif %}
+
+<script src="{{ url('/static/html5-qrcode.min.js') }}"></script>
+<script>
+(function () {
+  // HTTPS guard
+  if (window.isSecureContext === false) {
+    document.getElementById('https-warning').classList.remove('hidden');
+    document.getElementById('btn-start').disabled = true;
+    document.getElementById('btn-start').classList.add('opacity-50', 'cursor-not-allowed');
+  }
+
+  // Tab switching
+  const tabBtns = document.querySelectorAll('.tab-btn');
+  const tabPanels = document.querySelectorAll('.tab-panel');
+  tabBtns.forEach(btn => {
+    btn.addEventListener('click', () => {
+      const target = btn.dataset.tab;
+      tabBtns.forEach(b => {
+        b.classList.toggle('border-blue-600', b.dataset.tab === target);
+        b.classList.toggle('text-blue-600', b.dataset.tab === target);
+        b.classList.toggle('font-medium', b.dataset.tab === target);
+        b.classList.toggle('border-transparent', b.dataset.tab !== target);
+        b.classList.toggle('text-gray-500', b.dataset.tab !== target);
+      });
+      tabPanels.forEach(p => p.classList.toggle('hidden', p.id !== 'tab-' + target));
+    });
+  });
+
+  // html5-qrcode camera
+  let scanner = null;
+  const errEl = document.getElementById('camera-error');
+  const btnStart = document.getElementById('btn-start');
+  const btnStop = document.getElementById('btn-stop');
+
+  function onScanSuccess(decodedText) {
+    if (scanner) scanner.stop().catch(() => {});
+    btnStop.classList.add('hidden');
+    btnStart.classList.remove('hidden');
+    {% if scan_mode == "new" %}
+    capturePayload(decodedText);
+    {% else %}
+    document.getElementById('scan-payload-value').value = decodedText;
+    document.getElementById('scan-result-form').submit();
+    {% endif %}
+  }
+
+  function onScanFailure(err) {
+    if (err && err.includes && err.includes("NotFoundException")) return;
+  }
+
+  btnStart.addEventListener('click', () => {
+    errEl.classList.add('hidden');
+    if (!scanner) scanner = new Html5Qrcode('reader');
+    scanner.start(
+      { facingMode: 'environment' },
+      { fps: 10, qrbox: { width: 250, height: 250 } },
+      onScanSuccess,
+      onScanFailure
+    ).then(() => {
+      btnStart.classList.add('hidden');
+      btnStop.classList.remove('hidden');
+    }).catch(err => {
+      const msg = (err && err.message) ? err.message : String(err);
+      errEl.textContent = 'Camera error: ' + msg + '. Check OS permissions and, in the HA companion app, Settings → Companion app → Camera.';
+      errEl.classList.remove('hidden');
+    });
+  });
+
+  btnStop.addEventListener('click', () => {
+    if (scanner) scanner.stop().catch(() => {});
+    btnStart.classList.remove('hidden');
+    btnStop.classList.add('hidden');
+  });
+
+  {% if scan_mode == "new" %}
+  // New-device mode: capture payload into the parent form's hidden input
+  function capturePayload(value) {
+    value = (value || '').trim();
+    if (!value) return;
+    var hiddenInput = document.getElementById('new-device-qr-payload');
+    if (hiddenInput) hiddenInput.value = value;
+    var badge = document.getElementById('qr-captured');
+    if (badge) {
+      badge.classList.remove('hidden');
+      var preview = document.getElementById('qr-captured-preview');
+      if (preview) preview.textContent = value.length > 50 ? value.slice(0, 50) + '…' : value;
+    }
+  }
+
+  var btnCapture = document.getElementById('btn-capture-payload');
+  if (btnCapture) {
+    btnCapture.addEventListener('click', function () {
+      capturePayload(document.getElementById('manual-payload-input').value);
+    });
+  }
+  {% else %}
+  // Edit mode: Verhoeff check for Matter manual code
+  const mcInput = document.getElementById('manual-code-input');
+  const mcHint = document.getElementById('manual-code-hint');
+  const mcSubmit = document.getElementById('manual-submit');
+
+  const D = [[0,1,2,3,4,5,6,7,8,9],[1,2,3,4,0,6,7,8,9,5],[2,3,4,0,1,7,8,9,5,6],[3,4,0,1,2,8,9,5,6,7],[4,0,1,2,3,9,5,6,7,8],[5,9,8,7,6,0,4,3,2,1],[6,5,9,8,7,1,0,4,3,2],[7,6,5,9,8,2,1,0,4,3],[8,7,6,5,9,3,2,1,0,4],[9,8,7,6,5,4,3,2,1,0]];
+  const P = [[0,1,2,3,4,5,6,7,8,9],[1,5,7,6,2,8,3,0,9,4],[5,8,0,3,7,9,6,1,4,2],[8,9,1,6,0,4,3,5,2,7],[9,4,5,3,1,2,6,8,7,0],[4,2,8,6,5,7,3,9,0,1],[2,7,9,3,8,0,6,4,1,5],[7,0,4,6,9,1,3,2,5,8]];
+  function verhoeff(s) {
+    let c = 0;
+    const rev = s.split('').reverse();
+    for (let i = 0; i < rev.length; i++) c = D[c][P[i % 8][parseInt(rev[i])]];
+    return c === 0;
+  }
+
+  if (mcInput) {
+    mcInput.addEventListener('input', () => {
+      const v = mcInput.value.replace(/\D/g, '');
+      if (v.length === 11) {
+        if (verhoeff(v)) {
+          mcHint.textContent = '✓ Check digit valid';
+          mcHint.className = 'text-xs text-green-600 mb-3';
+          mcSubmit.disabled = false;
+        } else {
+          mcHint.textContent = '✗ Invalid check digit - please re-enter';
+          mcHint.className = 'text-xs text-red-600 mb-3';
+          mcSubmit.disabled = true;
+        }
+      } else {
+        mcHint.textContent = 'Enter 11 digits - check digit validated before submit.';
+        mcHint.className = 'text-xs text-gray-400 mb-3';
+        mcSubmit.disabled = false;
+      }
+    });
+  }
+
+  // HomeKit code: basic validation on input
+  const hkCodeInput = document.getElementById('homekit-code-input');
+  const hkCodeHint = document.getElementById('homekit-code-hint');
+  const hkSubmit = document.getElementById('homekit-submit');
+  if (hkCodeInput) {
+    hkCodeInput.addEventListener('input', () => {
+      const v = hkCodeInput.value.replace(/[^\d-]/g, '');
+      hkCodeInput.value = v;
+      const digits = v.replace(/-/g, '');
+      if (digits.length === 8) {
+        if (digits === '00000000' || /^(\d)\1{7}$/.test(digits) || digits === '12345678' || digits === '87654321') {
+          hkCodeHint.textContent = '✗ Reserved/trivial code - please re-enter';
+          hkCodeHint.className = 'text-xs text-red-600 mb-3';
+          hkSubmit.disabled = true;
+        } else {
+          hkCodeHint.textContent = '✓ 8 digits entered (no checksum)';
+          hkCodeHint.className = 'text-xs text-green-600 mb-3';
+          hkSubmit.disabled = false;
+        }
+      } else {
+        hkCodeHint.textContent = 'Enter 8 digits - no checksum on HomeKit codes. Dashes optional.';
+        hkCodeHint.className = 'text-xs text-gray-400 mb-3';
+        hkSubmit.disabled = false;
+      }
+    });
+  }
+
+  // HomeKit category hint
+  const hkCatInput = document.querySelector('#form-homekit-fields [name="homekit_category"]');
+  const hkCatHint = document.getElementById('hk-cat-hint');
+  if (hkCatInput && hkCatHint) {
+    const catNames = {1:'Other',2:'Bridge',3:'Fan',4:'Garage Door Opener',5:'Lightbulb',6:'Door Lock',7:'Outlet',8:'Switch',9:'Thermostat',10:'Sensor',11:'Alarm System',12:'Door',13:'Window',14:'Window Covering',15:'Programmable Switch',16:'Range Extender',17:'IP Camera',18:'Video Doorbell',19:'Air Purifier',20:'Air Heater',21:'Air Conditioner',22:'Air Humidifier',23:'Air Dehumidifier',24:'Apple TV',25:'HomePod',26:'Speaker',27:'AirPort',28:'Sprinkler',29:'Faucet',30:'Shower Head',31:'Television',32:'Target Controller',33:'Router',34:'Audio Receiver',35:'TV Set Top Box',36:'TV Streaming Stick'};
+    hkCatInput.addEventListener('input', () => {
+      const id = parseInt(hkCatInput.value) || 0;
+      hkCatHint.value = catNames[id] || '(unknown)';
+    });
+  }
+
+  // Matter fields form: convert hex VID/PID to decimal hidden inputs
+  const formMatterFields = document.getElementById('form-matter-fields');
+  if (formMatterFields) {
+    formMatterFields.addEventListener('submit', function (e) {
+      const vidHex = this.querySelector('[name="vid_hex"]').value.trim();
+      const pidHex = this.querySelector('[name="pid_hex"]').value.trim();
+      if (vidHex) {
+        const n = parseInt(vidHex, 16);
+        if (isNaN(n)) { e.preventDefault(); alert('Invalid VID hex'); return; }
+        let h = document.createElement('input'); h.type = 'hidden'; h.name = 'vid'; h.value = n; this.appendChild(h);
+      }
+      if (pidHex) {
+        const n = parseInt(pidHex, 16);
+        if (isNaN(n)) { e.preventDefault(); alert('Invalid PID hex'); return; }
+        let h = document.createElement('input'); h.type = 'hidden'; h.name = 'pid'; h.value = n; this.appendChild(h);
+      }
+    });
+  }
+  {% endif %}
+})();
+</script>

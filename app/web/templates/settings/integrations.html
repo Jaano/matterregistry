@@ -1,0 +1,396 @@
+{% extends "base.html" %}
+{% block title %}{{ t.settings.tab_integrations }} - {{ t.nav.brand }}{% endblock %}
+{% block content %}
+<h1 class="text-2xl font-bold mb-2">{{ t.settings.title }}</h1>
+<nav class="mb-6 flex gap-4 border-b border-gray-200 pb-2 text-sm">
+  <a href="{{ url('/settings') }}" class="text-gray-500 hover:text-gray-800 pb-1">{{ t.settings.tab_general }}</a>
+  <span class="font-semibold text-blue-600 border-b-2 border-blue-600 pb-1">{{ t.settings.tab_integrations }}</span>
+</nav>
+<h2 class="text-xl font-semibold mb-2">{{ t.settings.integrations.title }}</h2>
+
+{# ── shared macros ── #}
+{% macro cap_badges(caps) %}
+{% if caps %}
+  <div class="mt-3">
+    <span class="text-xs text-gray-400 uppercase">{{ t.settings.integrations.cap_heading }}</span>
+    <div class="flex flex-wrap gap-1 mt-1">
+      {% if caps.can_create_devices %}
+      <span class="bg-blue-50 text-blue-700 px-1.5 py-0.5 rounded text-xs">{{ t.settings.integrations.cap_creates }}</span>
+      {% endif %}
+      {% if caps.can_update_devices %}
+      <span class="bg-indigo-50 text-indigo-700 px-1.5 py-0.5 rounded text-xs">{{ t.settings.integrations.cap_updates }}</span>
+      {% endif %}
+      {% if caps.can_update_status %}
+      <span class="bg-purple-50 text-purple-700 px-1.5 py-0.5 rounded text-xs">{{ t.settings.integrations.cap_status }}</span>
+      {% endif %}
+      {% if caps.can_act_externally %}
+      <span class="bg-orange-50 text-orange-700 px-1.5 py-0.5 rounded text-xs">{{ t.settings.integrations.cap_external }}</span>
+      {% endif %}
+      {% if not (caps.can_create_devices or caps.can_update_devices or caps.can_update_status or caps.can_act_externally) %}
+      <span class="text-xs text-gray-400">{{ t.settings.integrations.cap_readonly }}</span>
+      {% endif %}
+    </div>
+    {% if caps.supported_protocols %}
+    <div class="mt-1">
+      <span class="text-xs text-gray-400">{{ t.settings.integrations.protocols_label }}</span>
+      <span class="text-xs font-mono text-gray-600">{{ caps.supported_protocols | join(', ') }}</span>
+    </div>
+    {% endif %}
+  </div>
+{% endif %}
+{% endmacro %}
+
+{% macro last_sync_row(last_sync, last_synced_at) %}
+{% if last_sync is not none %}
+  <div class="mt-2 text-xs text-gray-500">
+    {{ t.settings.integrations.last_sync_label }}
+    <strong>{{ last_sync.created }}</strong> {{ t.settings.integrations.last_sync_created }}
+    <strong>{{ last_sync.updated }}</strong> {{ t.settings.integrations.last_sync_updated }}
+    <strong>{{ last_sync.skipped }}</strong> {{ t.settings.integrations.last_sync_unchanged }}
+    {% if last_synced_at %}
+    <span class="text-gray-400 ml-1">{{ t.settings.integrations.last_sync_at }} {{ last_synced_at.strftime('%H:%M:%S') }}</span>
+    {% endif %}
+  </div>
+{% endif %}
+{% endmacro %}
+
+<!-- Matter Server card -->
+<div class="bg-white rounded shadow p-5 mb-6">
+  <div class="flex items-center justify-between mb-4">
+    <h2 class="text-sm font-semibold text-gray-500 uppercase">{{ ms_long_name }}</h2>
+    <span id="ms-status-badge" class="
+      text-xs font-medium px-2 py-0.5 rounded-full
+      {% if ms_status == 'connected' %}bg-green-100 text-green-700
+      {% elif ms_status == 'connecting' %}bg-yellow-100 text-yellow-700
+      {% elif ms_status == 'unconfigured' %}bg-gray-100 text-gray-500
+      {% else %}bg-red-100 text-red-700{% endif %}">
+      {{ t.settings.integrations.status[ms_status] or ms_status }}
+    </span>
+  </div>
+
+  {% if ms_error %}
+  <div class="mb-4 bg-red-50 border border-red-200 text-red-800 rounded px-4 py-2 text-sm font-mono">
+    {{ ms_error }}
+  </div>
+  {% endif %}
+
+  <div class="space-y-3">
+    <div>
+      <span class="text-xs text-gray-400 uppercase">{{ t.settings.integrations.ws_url_label }}</span>
+      <p class="text-sm text-gray-700 font-mono">{{ ms_url or '-' }}</p>
+    </div>
+    {{ cap_badges(ms_capabilities) }}
+    {{ last_sync_row(ms_last_sync, ms_last_synced_at) }}
+    <div class="flex gap-3 mt-3">
+      <button type="button" onclick="runImport()"
+              id="import-btn"
+              data-label-sync="{{ t.settings.integrations.sync_now }}"
+              data-label-syncing="{{ t.settings.integrations.syncing }}"
+              class="border border-gray-300 text-gray-700 px-4 py-2 rounded text-sm hover:bg-gray-50 disabled:opacity-50">
+        {{ t.settings.integrations.sync_now }}
+      </button>
+    </div>
+  </div>
+
+  <!-- Import result -->
+  <div id="import-result" class="mt-4 hidden">
+    <div id="import-summary" class="text-sm text-gray-700"></div>
+  </div>
+</div>
+
+<!-- OTBR card -->
+<div class="bg-white rounded shadow p-5 mb-6">
+  <div class="flex items-center justify-between mb-4">
+    <h2 class="text-sm font-semibold text-gray-500 uppercase">{{ otbr_long_name }}</h2>
+    <span id="otbr-status-badge" class="
+      text-xs font-medium px-2 py-0.5 rounded-full
+      {% if otbr_status == 'connected' %}bg-green-100 text-green-700
+      {% elif otbr_status == 'connecting' %}bg-yellow-100 text-yellow-700
+      {% elif otbr_status == 'unconfigured' %}bg-gray-100 text-gray-500
+      {% else %}bg-red-100 text-red-700{% endif %}">
+      {{ t.settings.integrations.status[otbr_status] or otbr_status }}
+    </span>
+  </div>
+
+  {% if otbr_error %}
+  <div class="mb-4 bg-red-50 border border-red-200 text-red-800 rounded px-4 py-2 text-sm font-mono">
+    {{ otbr_error }}
+  </div>
+  {% endif %}
+
+  <div class="space-y-3">
+    <div>
+      <span class="text-xs text-gray-400 uppercase">{{ t.settings.integrations.rest_url_label }}</span>
+      <p class="text-sm text-gray-700 font-mono">{{ otbr_url or '-' }}</p>
+    </div>
+    {{ cap_badges(otbr_capabilities) }}
+    {{ last_sync_row(otbr_last_sync, otbr_last_synced_at) }}
+
+    {% for net in otbr_networks %}
+    <div class="mt-3 pt-3 border-t border-gray-100">
+      <dl class="space-y-1 text-sm">
+        <div class="flex gap-2">
+          <dt class="text-gray-500 w-36 shrink-0">{{ t.settings.integrations.net_name }}</dt>
+          <dd>{{ net.network_name or '-' }}</dd>
+        </div>
+        <div class="flex gap-2">
+          <dt class="text-gray-500 w-36 shrink-0">{{ t.settings.integrations.net_channel }}</dt>
+          <dd class="font-mono">{{ net.channel }}</dd>
+        </div>
+        <div class="flex gap-2">
+          <dt class="text-gray-500 w-36 shrink-0">{{ t.settings.integrations.net_pan_id }}</dt>
+          <dd class="font-mono">0x{{ net.pan_id }}</dd>
+        </div>
+        <div class="flex gap-2">
+          <dt class="text-gray-500 w-36 shrink-0">{{ t.settings.integrations.net_ext_pan_id }}</dt>
+          <dd class="font-mono break-all">{{ net.ext_pan_id }}</dd>
+        </div>
+        <div class="flex gap-2">
+          <dt class="text-gray-500 w-36 shrink-0">{{ t.settings.integrations.net_mesh_prefix }}</dt>
+          <dd class="font-mono break-all">{{ net.mesh_local_prefix }}</dd>
+        </div>
+        <div class="flex gap-2">
+          <dt class="text-gray-500 w-36 shrink-0">{{ t.settings.integrations.net_key }}</dt>
+          <dd class="font-mono break-all">{{ net.network_key }}</dd>
+        </div>
+        {% if net.pskc %}
+        <div class="flex gap-2">
+          <dt class="text-gray-500 w-36 shrink-0">{{ t.settings.integrations.net_pskc }}</dt>
+          <dd class="font-mono break-all">{{ net.pskc }}</dd>
+        </div>
+        {% endif %}
+      </dl>
+
+      {% if net.active_dataset_hex %}
+      <div class="mt-3">
+        <span class="text-xs text-gray-400 uppercase">{{ t.settings.integrations.net_dataset }}</span>
+        <div class="mt-1 flex items-start gap-2">
+          <code id="otbr-ds-{{ loop.index }}"
+                class="block flex-1 text-xs font-mono break-all bg-gray-50 border border-gray-200 rounded p-2 text-gray-700">{{ net.active_dataset_hex }}</code>
+          <button type="button"
+                  onclick="navigator.clipboard.writeText(document.getElementById('otbr-ds-{{ loop.index }}').textContent).then(()=>{this.textContent='{{ t.settings.integrations.net_dataset_copy }}!';setTimeout(()=>{this.textContent='{{ t.settings.integrations.net_dataset_copy }}'},1500)})"
+                  class="shrink-0 text-xs border border-gray-300 px-2 py-1 rounded hover:bg-gray-50">{{ t.settings.integrations.net_dataset_copy }}</button>
+        </div>
+        <p class="mt-1 text-xs text-gray-400">{{ t.settings.integrations.net_dataset_warning }}</p>
+      </div>
+      {% endif %}
+    </div>
+    {% endfor %}
+
+    <div class="flex gap-3 mt-3">
+      <button type="button" onclick="runOtbrPoll()"
+              id="otbr-poll-btn"
+              data-label-sync="{{ t.settings.integrations.sync_now }}"
+              data-label-syncing="{{ t.settings.integrations.syncing }}"
+              class="border border-gray-300 text-gray-700 px-4 py-2 rounded text-sm hover:bg-gray-50 disabled:opacity-50">
+        {{ t.settings.integrations.sync_now }}
+      </button>
+    </div>
+  </div>
+
+  <!-- Poll result -->
+  <div id="otbr-poll-result" class="mt-4 hidden">
+    <div id="otbr-poll-summary" class="text-sm text-gray-700"></div>
+  </div>
+</div>
+
+<!-- HA Core card -->
+<div class="bg-white rounded shadow p-5 mb-6">
+  <div class="flex items-center justify-between mb-4">
+    <h2 class="text-sm font-semibold text-gray-500 uppercase">{{ ha_long_name }}</h2>
+    <span class="
+      text-xs font-medium px-2 py-0.5 rounded-full
+      {% if ha_status == 'connected' %}bg-green-100 text-green-700
+      {% elif ha_status == 'connecting' %}bg-yellow-100 text-yellow-700
+      {% elif ha_status == 'unconfigured' %}bg-gray-100 text-gray-500
+      {% else %}bg-red-100 text-red-700{% endif %}">
+      {{ t.settings.integrations.status[ha_status] or ha_status }}
+    </span>
+  </div>
+
+  {% if ha_error %}
+  <div class="mb-4 bg-red-50 border border-red-200 text-red-800 rounded px-4 py-2 text-sm font-mono">
+    {{ ha_error }}
+  </div>
+  {% endif %}
+
+  <div class="space-y-3">
+    {% if ha_using_supervisor %}
+    <div class="rounded bg-blue-50 border border-blue-200 px-4 py-2 text-sm text-blue-800">
+      {{ t.settings.integrations.supervisor_note }}
+    </div>
+    {% endif %}
+    <div>
+      <span class="text-xs text-gray-400 uppercase">URL</span>
+      <p class="text-sm text-gray-700 font-mono">{{ ha_url or '-' }}</p>
+    </div>
+    {% if not ha_using_supervisor %}
+    <div>
+      <span class="text-xs text-gray-400 uppercase">{{ t.settings.integrations.ha_token_label }}</span>
+      <p class="text-sm text-gray-700 font-mono">{{ ha_token_hint or '-' }}</p>
+    </div>
+    {% endif %}
+    {{ cap_badges(ha_capabilities) }}
+    {{ last_sync_row(ha_last_sync, ha_last_synced_at) }}
+    <div class="flex gap-3 mt-3">
+      <button type="button" onclick="runHaSync()"
+              id="ha-sync-btn"
+              {% if ha_status == 'unconfigured' %}disabled{% endif %}
+              data-label-sync="{{ t.settings.integrations.sync_now }}"
+              data-label-syncing="{{ t.settings.integrations.syncing }}"
+              class="border border-gray-300 text-gray-700 px-4 py-2 rounded text-sm hover:bg-gray-50 disabled:opacity-50">
+        {{ t.settings.integrations.sync_now }}
+      </button>
+    </div>
+  </div>
+
+  <div id="ha-sync-result" class="mt-3 hidden text-sm text-gray-700"></div>
+</div>
+
+<!-- mDNS Discovery card -->
+<div class="bg-white rounded shadow p-5 mb-6">
+  <div class="flex items-center justify-between mb-4">
+    <h2 class="text-sm font-semibold text-gray-500 uppercase">{{ mdns_long_name }}</h2>
+    <span class="
+      text-xs font-medium px-2 py-0.5 rounded-full
+      {% if mdns_status == 'browsing' %}bg-green-100 text-green-700
+      {% elif mdns_status == 'unconfigured' or mdns_status == 'disabled' %}bg-gray-100 text-gray-500
+      {% else %}bg-red-100 text-red-700{% endif %}">
+      {{ t.settings.integrations.status[mdns_status] or mdns_status }}
+    </span>
+  </div>
+
+  {% if mdns_error %}
+  <div class="mb-4 bg-red-50 border border-red-200 text-red-800 rounded px-4 py-2 text-sm font-mono">
+    {{ mdns_error }}
+  </div>
+  {% endif %}
+
+  <div class="space-y-3">
+    {% if mdns_status == 'unconfigured' %}
+    <div class="rounded bg-gray-50 border border-gray-200 px-4 py-2 text-sm text-gray-600">
+      {{ t.settings.integrations.mdns_disabled_note
+         | replace('{env_var}', '<span class="font-mono">MR_MDNS_ENABLED</span>')
+         | replace('{option}', '<span class="font-mono">mdns_enabled</span>')
+         | safe }}
+    </div>
+    {% else %}
+    <div>
+      <span class="text-xs text-gray-400 uppercase">{{ t.settings.integrations.mdns_discovered_label }}</span>
+      <p class="text-sm text-gray-700"><strong>{{ mdns_discovered_count }}</strong> {{ t.settings.integrations.mdns_discovered }}</p>
+    </div>
+    {% endif %}
+    {{ cap_badges(mdns_capabilities) }}
+    {{ last_sync_row(mdns_last_sync, mdns_last_synced_at) }}
+    <div class="flex gap-3 mt-3">
+      <button type="button" onclick="runMdnsSync()"
+              id="mdns-sync-btn"
+              {% if mdns_status == 'unconfigured' %}disabled{% endif %}
+              data-label-sync="{{ t.settings.integrations.sync_now }}"
+              data-label-syncing="{{ t.settings.integrations.syncing }}"
+              class="border border-gray-300 text-gray-700 px-4 py-2 rounded text-sm hover:bg-gray-50 disabled:opacity-50">
+        {{ t.settings.integrations.sync_now }}
+      </button>
+    </div>
+  </div>
+
+  <div id="mdns-sync-result" class="mt-3 hidden text-sm text-gray-700"></div>
+</div>
+
+<script>
+const baseUrl = "{{ url('/api/integrations') }}";
+
+async function runImport() {
+  const btn = document.getElementById('import-btn');
+  btn.disabled = true;
+  btn.textContent = btn.dataset.labelSyncing || 'Syncing…';
+  const resultDiv = document.getElementById('import-result');
+  const summaryDiv = document.getElementById('import-summary');
+  resultDiv.classList.remove('hidden');
+  summaryDiv.textContent = {{ t.settings.integrations.applying_import | tojson }};
+
+  try {
+    const resp = await fetch(baseUrl + '/matter-server/import/apply', {method: 'POST'});
+    const data = await resp.json();
+    if (!resp.ok) {
+      summaryDiv.textContent = {{ t.settings.integrations.sync_error | tojson }} + ': ' + (data.detail || resp.status);
+      return;
+    }
+    const s = data.summary;
+    summaryDiv.innerHTML = {{ t.settings.integrations.sync_done | tojson }}
+      .replace('{created}', s.create).replace('{updated}', s.update).replace('{unchanged}', s.unchanged);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = btn.dataset.labelSync || 'Sync now';
+  }
+}
+
+async function runOtbrPoll() {
+  const btn = document.getElementById('otbr-poll-btn');
+  btn.disabled = true;
+  btn.textContent = btn.dataset.labelSyncing || 'Syncing…';
+  const resultDiv = document.getElementById('otbr-poll-result');
+  const summaryDiv = document.getElementById('otbr-poll-summary');
+  resultDiv.classList.remove('hidden');
+  summaryDiv.textContent = {{ t.settings.integrations.applying_otbr | tojson }};
+
+  try {
+    const resp = await fetch(baseUrl + '/otbr/poll/apply', {method: 'POST'});
+    const data = await resp.json();
+    if (!resp.ok) {
+      summaryDiv.textContent = {{ t.settings.integrations.sync_error | tojson }} + ': ' + (data.detail || resp.status);
+      return;
+    }
+    summaryDiv.innerHTML = {{ t.settings.integrations.sync_done_otbr | tojson }}.replace('{network}', data.network_name);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = btn.dataset.labelSync || 'Sync now';
+  }
+}
+
+async function runHaSync() {
+  const btn = document.getElementById('ha-sync-btn');
+  btn.disabled = true;
+  btn.innerHTML = '<svg class="inline w-4 h-4 animate-spin mr-1" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"></path></svg>' + (btn.dataset.labelSyncing || 'Syncing…');
+  const resultDiv = document.getElementById('ha-sync-result');
+  resultDiv.classList.remove('hidden');
+  resultDiv.textContent = {{ t.settings.integrations.syncing_ha | tojson }};
+  try {
+    const resp = await fetch(baseUrl + '/ha-core/sync', {method: 'POST'});
+    const data = await resp.json();
+    if (!resp.ok) {
+      resultDiv.textContent = {{ t.settings.integrations.sync_error | tojson }} + ': ' + (data.detail || resp.status);
+      return;
+    }
+    resultDiv.innerHTML = {{ t.settings.integrations.sync_done | tojson }}
+      .replace('{created}', data.created).replace('{updated}', data.updated).replace('{unchanged}', data.skipped);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = btn.dataset.labelSync || 'Sync now';
+  }
+}
+
+async function runMdnsSync() {
+  const btn = document.getElementById('mdns-sync-btn');
+  btn.disabled = true;
+  btn.textContent = btn.dataset.labelSyncing || 'Syncing…';
+  const resultDiv = document.getElementById('mdns-sync-result');
+  resultDiv.classList.remove('hidden');
+  resultDiv.textContent = {{ t.settings.integrations.projecting_mdns | tojson }};
+  try {
+    const resp = await fetch(baseUrl + '/mdns/sync', {method: 'POST'});
+    const data = await resp.json();
+    if (!resp.ok) {
+      resultDiv.textContent = {{ t.settings.integrations.sync_error | tojson }} + ': ' + (data.detail || resp.status);
+      return;
+    }
+    resultDiv.innerHTML = {{ t.settings.integrations.sync_done | tojson }}
+      .replace('{created}', data.created).replace('{updated}', data.updated).replace('{unchanged}', data.skipped);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = btn.dataset.labelSync || 'Sync now';
+  }
+}
+
+</script>
+{% endblock %}

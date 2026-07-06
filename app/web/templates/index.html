@@ -1,0 +1,9 @@
+{% extends "base.html" %}
+{% block title %}{{ t.nav.brand }}{% endblock %}
+{% block content %}
+<div class="text-center py-16">
+  <h1 class="text-3xl font-bold mb-4">{{ t.nav.brand }}</h1>
+  <p class="text-gray-500 mb-2">{{ t.index.tagline }}</p>
+  <p class="text-sm text-gray-400">Version: {{ version }}</p>
+</div>
+{% endblock %}

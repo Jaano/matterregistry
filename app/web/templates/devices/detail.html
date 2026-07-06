@@ -1,0 +1,812 @@
+{% extends "base.html" %}
+{% block title %}{{ device.name }} - {{ t.nav.brand }}{% endblock %}
+{% block content %}
+<style>
+/* Dark mode: the QR is black modules on a transparent background, which
+   disappears on the dark card. Invert to render the modules white. */
+html.dark #qr-svg img { filter: invert(1); }
+@media print {
+  nav, .no-print { display: none; }
+  #qr-svg img, #qr-svg { width: 5cm; height: 5cm; }
+  /* Always print the original black-on-white QR so it stays scannable,
+     even when the page is viewed in dark mode. */
+  #qr-svg img { filter: none; }
+}
+</style>
+
+{# ── B.11: HAP pairing keys section (HomeKit devices only) ──────────────── #}
+{% macro _hap_keys_section() %}
+<div class="mt-4 pt-4 border-t border-gray-100">
+  <p class="text-xs font-medium text-gray-500 mb-2">{{ t.device.detail.hap_keys_heading }}</p>
+  <dl class="space-y-1 text-xs text-gray-600">
+    {% for type_val, label in hap_prop_types %}
+    {% set prop = hap_props.get(type_val) %}
+    {% if prop %}
+    <div class="flex gap-2">
+      <dt class="text-gray-400 w-40 shrink-0">{{ label }}</dt>
+      <dd class="font-mono break-all">{{ prop.value }}</dd>
+    </div>
+    {% endif %}
+    {% endfor %}
+  </dl>
+</div>
+{% endmacro %}
+
+{# ── Source badge macro ──────────────────────────────────────────────────── #}
+{%- macro src_badge(source) -%}
+{%- set ico = source.icon if source else '' -%}
+{%- set lbl = source.label if source else '' -%}
+{%- if ico %}<span class="{{ ico }} ml-1 text-gray-400" role="img" aria-label="{{ lbl }}" title="{{ lbl }}"></span>{%- endif -%}
+{%- endmacro -%}
+
+<div class="flex items-start justify-between mb-6 no-print">
+  <div>
+    <a href="{{ url('/devices') }}" class="text-gray-400 hover:text-gray-600 text-sm">← {{ t.nav.devices }}</a>
+    <h1 class="text-2xl font-bold mt-1">{{ device.name }}</h1>
+    <span class="inline-block mt-1 px-2 py-0.5 rounded text-xs font-medium
+      {% if device.status.value == 'active' %}bg-green-100 text-green-700
+      {% elif device.status.value == 'retired' %}bg-gray-100 text-gray-500
+      {% elif device.status.value == 'hidden' %}bg-gray-100 text-gray-400 line-through
+      {% else %}bg-yellow-100 text-yellow-700{% endif %}">
+      {{ t.device.list['status_' ~ device.status.value] }}
+    </span>
+  </div>
+  <div class="flex gap-2 mt-1">
+    <a href="{{ url('/devices/' + device.id + '/scan') }}"
+       class="border border-blue-300 text-blue-700 px-3 py-1.5 rounded text-sm hover:bg-blue-50">{{ t.device.detail.scan_btn }}</a>
+    <a href="{{ url('/devices/' + device.id + '/edit') }}"
+       class="border border-gray-300 px-3 py-1.5 rounded text-sm hover:bg-gray-50">{{ t.device.detail.edit_btn }}</a>
+    <a href="{{ url('/devices/' + device.id + '/merge') }}"
+       class="border border-gray-300 px-3 py-1.5 rounded text-sm hover:bg-gray-50">{{ t.device.detail.merge_btn }}</a>
+    <button
+      hx-delete="{{ url('/devices/' + device.id) }}"
+      hx-confirm="{{ t.device.detail.delete_confirm | replace('{name}', device.name) }}"
+      class="border border-red-200 text-red-600 px-3 py-1.5 rounded text-sm hover:bg-red-50">
+      {{ t.device.detail.delete_btn }}
+    </button>
+  </div>
+</div>
+
+<div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+  <div class="bg-white rounded shadow p-5">
+    <h2 class="text-lg font-semibold mb-4">{{ t.device.detail.identity }}</h2>
+    <dl class="space-y-2 text-sm">
+      <div class="flex gap-2">
+        <dt class="text-gray-500 w-36 shrink-0">{{ t.device.detail.field_vendor }}</dt>
+        <dd>{{ device.vendor or "-" }}{{ src_badge(device.vendor_source) }}</dd>
+      </div>
+      <div class="flex gap-2">
+        <dt class="text-gray-500 w-36 shrink-0">{{ t.device.detail.field_product }}</dt>
+        <dd>{{ device.product or "-" }}{{ src_badge(device.product_source) }}</dd>
+      </div>
+      <div class="flex gap-2">
+        <dt class="text-gray-500 w-36 shrink-0">{{ t.device.detail.field_model }}</dt>
+        <dd>{{ device.device_model or "-" }}{{ src_badge(device.device_model_source) }}</dd>
+      </div>
+      <div class="flex gap-2">
+        <dt class="text-gray-500 w-36 shrink-0">{{ t.device.detail.field_serial }}</dt>
+        <dd>{{ device.serial or "-" }}{{ src_badge(device.serial_source) }}</dd>
+      </div>
+      <div class="flex gap-2">
+        <dt class="text-gray-500 w-36 shrink-0">{{ t.device.detail.field_hw_version }}</dt>
+        <dd>{{ device.hardware_version or "-" }}{{ src_badge(device.hardware_version_source) }}</dd>
+      </div>
+      <div class="flex gap-2">
+        <dt class="text-gray-500 w-36 shrink-0">{{ t.device.detail.field_fw_version }}</dt>
+        <dd>{{ device.firmware_version or "-" }}{{ src_badge(device.firmware_version_source) }}</dd>
+      </div>
+      {% if device.vendor_id %}
+      <div class="flex gap-2">
+        <dt class="text-gray-500 w-36 shrink-0">{{ t.device.detail.field_vid_pid }}</dt>
+        <dd class="font-mono">{{ device.vid_pid_display }}{{ src_badge(device.vendor_id_source) }}</dd>
+      </div>
+      {% endif %}
+      <div class="flex gap-2">
+        <dt class="text-gray-500 w-36 shrink-0">{{ t.device.detail.field_added }}</dt>
+        <dd>{{ device.created_at.strftime('%Y-%m-%d') }}</dd>
+      </div>
+      {% if device.commissioned_at %}
+      <div class="flex gap-2">
+        <dt class="text-gray-500 w-36 shrink-0">{{ t.device.detail.field_commissioned }}</dt>
+        <dd>{{ device.commissioned_at.strftime('%Y-%m-%d') }}{{ src_badge(device.commissioned_at_source) }}</dd>
+      </div>
+      {% endif %}
+      <div class="flex gap-2">
+        <dt class="text-gray-500 w-36 shrink-0">{{ t.device.detail.field_protocol }}</dt>
+        <dd>
+          <span class="inline-flex items-center gap-1 text-sm">
+            {{ device.protocol.label if device.protocol else "Unlabeled" }}{% if device.protocol and device.protocol.icon %} <span class="{{ device.protocol.icon }}" role="img" aria-label="{{ device.protocol.label }}"></span>{% endif %}
+          </span>
+        </dd>
+      </div>
+      <div class="flex gap-2">
+        <dt class="text-gray-500 w-36 shrink-0">{{ t.device.detail.field_warranty }}</dt>
+        <dd>{% if device.warranty_until %}{{ device.warranty_until.isoformat() }}{% else %}<span class="text-gray-400">-</span>{% endif %}</dd>
+      </div>
+      <div class="flex gap-2">
+        <dt class="text-gray-500 w-36 shrink-0">{{ t.device.detail.field_room }}</dt>
+        <dd>{{ device.room or "-" }}{{ src_badge(device.room_source) }}</dd>
+      </div>
+    </dl>
+  </div>
+
+{% if qr_payload %}
+  <div class="bg-white rounded shadow p-5" id="onboarding">
+    <h2 class="text-lg font-semibold mb-4">{{ t.device.detail.onboarding }}</h2>
+    <div class="flex flex-col sm:flex-row gap-6 items-start">
+      <div id="qr-svg" class="shrink-0">
+        <img src="{{ url('/api/devices/' + device.id + '/qr.svg') }}"
+             alt="{{ 'HomeKit' if is_homekit else 'Matter' }} QR code" class="w-40 h-40 border border-gray-200 rounded">
+      </div>
+      <div class="space-y-3 text-sm">
+        {% if manual_formatted %}
+        <div>
+          <div class="flex items-center gap-2">
+            {% if device.protocol and device.protocol.icon %}<span class="{{ device.protocol.icon }}" role="img" aria-label="{{ device.protocol.label }}" style="width:2.2em;height:2.2em"></span>{% endif %}
+            <span class="font-mono text-lg tracking-wider">{{ manual_formatted }}</span>
+            <button type="button"
+                    onclick="navigator.clipboard.writeText('{{ manual_plain }}').then(()=>{this.textContent='{{ t.device.detail.copied }}';setTimeout(()=>{this.textContent='{{ t.device.detail.copy }}'},1500)})"
+                    class="no-print text-xs border border-gray-300 px-2 py-0.5 rounded hover:bg-gray-50">{{ t.device.detail.copy }}</button>
+          </div>
+        </div>
+        {% endif %}
+{% if is_homekit and (hk_category or hk_setup_id or hk_supports_ip is not none) %}
+        <dl class="space-y-1 text-xs text-gray-600">
+          {% if hk_category %}
+          <div class="flex gap-2">
+            <dt class="text-gray-400 w-40 shrink-0">{{ t.device.detail.field_hk_category }}</dt>
+            <dd>{{ hk_category }}</dd>
+          </div>
+          {% endif %}
+          {% if hk_setup_id %}
+          <div class="flex gap-2">
+            <dt class="text-gray-400 w-40 shrink-0">{{ t.device.detail.field_hk_setup_id }}</dt>
+            <dd class="font-mono">{{ hk_setup_id }}</dd>
+          </div>
+          {% endif %}
+          {% if hk_supports_ip is not none %}
+          <div class="flex gap-2">
+            <dt class="text-gray-400 w-40 shrink-0">{{ t.device.detail.field_hk_transports }}</dt>
+            <dd>
+              {% if hk_supports_ip %}IP{% endif %}
+              {% if hk_supports_ip and hk_supports_ble %}, {% endif %}
+              {% if hk_supports_ble %}BLE{% endif %}
+              {% if not hk_supports_ip and not hk_supports_ble %}-{% endif %}
+              {% if hk_paired %}<span class="ml-2 text-yellow-600">({{ t.device.detail.hk_paired }})</span>{% endif %}
+            </dd>
+          </div>
+          {% endif %}
+        </dl>
+        {% endif %}
+        {% if not is_homekit and (mt_version is not none or mt_flow_label or mt_disc_label) %}
+        <dl class="space-y-1 text-xs text-gray-600">
+          {% if mt_version is not none %}
+          <div class="flex gap-2">
+            <dt class="text-gray-400 w-40 shrink-0">{{ t.device.detail.field_mt_version }}</dt>
+            <dd class="font-mono">{{ mt_version }}</dd>
+          </div>
+          {% endif %}
+          {% if mt_flow_label %}
+          <div class="flex gap-2">
+            <dt class="text-gray-400 w-40 shrink-0">{{ t.device.detail.field_commission_flow }}</dt>
+            <dd>{{ mt_flow_label }}</dd>
+          </div>
+          {% endif %}
+          {% if mt_disc_label %}
+          <div class="flex gap-2">
+            <dt class="text-gray-400 w-40 shrink-0">{{ t.device.detail.field_discovery }}</dt>
+            <dd>{{ mt_disc_label }}</dd>
+          </div>
+          {% endif %}
+        </dl>
+        {% endif %}
+        <button type="button" onclick="window.print()"
+                class="no-print text-xs border border-gray-300 px-3 py-1 rounded hover:bg-gray-50">
+          {{ t.device.detail.print_qr_sticker }}
+        </button>
+      </div>
+    </div>
+    {% if is_homekit and hap_props %}{{ _hap_keys_section() }}{% endif %}
+  </div>
+  {% else %}
+  <div class="bg-white rounded shadow p-5" id="onboarding">
+    <h2 class="text-lg font-semibold mb-4">{{ t.device.detail.onboarding }}</h2>
+    <div class="flex flex-col sm:flex-row gap-6 items-start">
+      <a href="{{ url('/devices/' + device.id + '/scan') }}"
+          class="w-40 h-40 border-2 border-dashed border-gray-300 rounded flex items-center justify-center text-center text-sm text-blue-600 hover:bg-gray-50 no-print">{{ t.device.detail.scan_btn }}</a>
+      <p class="text-sm text-gray-500">{{ t.device.detail.no_onboarding }}</p>
+    </div>
+    {% if is_homekit and hap_props %}{{ _hap_keys_section() }}{% endif %}
+  </div>
+  {% endif %}
+</div>
+
+{# B.16: an integration's icon (decorative - the header text names it). #}
+{% macro integration_icon(cls) %}{% if cls %}<span class="{{ cls }}" aria-hidden="true"></span> {% endif %}{% endmacro %}
+
+{# B.13: render a device action button. kind∈{retrieve,test} → neutral/reads; write → confirm+destructive #}
+{% macro device_action_button(action, device_id, slug) %}
+{% set is_write = action.kind == 'write' %}
+<button
+  hx-post="{{ url('/api/integrations/' + slug + '/devices/' + device_id + '/actions/' + action.key) }}"
+  hx-swap="none"
+  hx-disabled-elt="this"
+  data-mr-action-label="{{ action.label }}"
+  {% if is_write %}hx-confirm="This will modify the device. Continue?"{% endif %}
+  class="no-print text-xs px-2 py-0.5 rounded {% if is_write %}border border-red-300 text-red-600 hover:bg-red-50{% else %}bg-blue-600 text-white hover:bg-blue-700{% endif %}"
+  title="{{ 'Reads device: actively queries the device for fresh data' if not is_write else 'Modifies device: confirmation required' }}">
+  {{ action.label }} <span class="{% if is_write %}text-red-400{% else %}text-blue-300{% endif %}">· {{ 'reads device' if not is_write else 'modifies device' }}</span>
+</button>
+{% endmacro %}
+
+{# B.15: collapsed-by-default raw data snapshot for one integration -
+   styled to match the Networking panel's "Advanced counters" disclosure. #}
+{% macro integration_data_details(row, prepend=none) %}
+{% if row or prepend %}
+<details class="mt-2">
+  <summary class="cursor-pointer text-gray-500 text-xs select-none">{{ t.device.detail.int_data }}{% if row and row.retrieved_at %} <span class="text-gray-400">· {{ row.retrieved_at.strftime('%Y-%m-%d %H:%M') }}</span>{% endif %}</summary>
+  <dl class="mt-2 space-y-1.5 text-xs">
+    {% if prepend %}{% for key, value in prepend.items() %}
+    <div class="flex gap-2">
+      <dt class="text-gray-400 w-44 shrink-0">{{ key }}</dt>
+      <dd class="font-mono break-all">{{ value }}</dd>
+    </div>
+    {% endfor %}{% endif %}
+    {% if row %}{% for key, value in row._payload.items() %}
+    <div class="flex gap-2">
+      <dt class="text-gray-400 w-44 shrink-0">{{ key.replace('_', ' ') }}</dt>
+      <dd class="font-mono">
+        {% if value is none %}<span class="text-gray-400 italic">-</span>
+        {% elif value is true %}{{ t.device.detail.val_yes }}
+        {% elif value is false %}{{ t.device.detail.val_no }}
+        {% elif value is iterable and value is not string %}{{ value | join(", ") }}
+        {% else %}{{ value }}{% endif %}
+      </dd>
+    </div>
+    {% endfor %}{% endif %}
+  </dl>
+</details>
+{% endif %}
+{% endmacro %}
+
+{% if matter_membership or mdns_networking %}
+<div class="bg-white rounded shadow p-5 mb-6">
+  <div class="flex items-center gap-2 justify-between mb-3">
+    <h2 class="text-lg font-semibold mb-4">{{ t.device.detail.networking }}</h2>
+    <div class="flex items-center gap-1.5">
+      {% set _net_type = (matter_network.network_type if matter_network and matter_network.network_type else None) or (mdns_networking.transport if mdns_networking else None) %}
+      {% if _net_type %}
+      <span class="text-xs font-medium px-2 py-0.5 rounded-full
+        {% if _net_type == 'wifi' %}bg-blue-100 text-blue-700
+        {% elif _net_type == 'thread' %}bg-teal-100 text-teal-700
+        {% elif _net_type == 'ethernet' %}bg-green-100 text-green-700
+        {% else %}bg-gray-100 text-gray-500{% endif %}">
+        {{ _net_type | upper }}
+      </span>
+      {% endif %}
+    </div>
+  </div>
+  {% if matter_membership %}
+  {% if matter_network is none or not matter_network.interface_name %}
+  <p class="text-sm text-gray-400 italic">Network details unavailable - diagnostic clusters not exposed</p>
+  {% else %}
+  {% if matter_network.active_network_faults %}
+  <div class="mb-3 rounded bg-red-50 border border-red-200 px-3 py-2 text-sm text-red-700">
+    <span class="font-semibold">Active network faults:</span>
+    {{ matter_network.active_network_faults | join(", ") }}
+  </div>
+  {% endif %}
+  <dl class="space-y-2 text-sm">
+    {% if matter_network.interface_name %}
+    <div class="flex gap-2">
+      <dt class="text-gray-500 w-36 shrink-0">{{ t.device.detail.field_interface }}</dt>
+      <dd class="font-mono text-xs">{{ matter_network.interface_name }}{{ src_badge(FieldSource.matter) }}</dd>
+    </div>
+    {% endif %}
+    {% if matter_network.mac_address %}
+    <div class="flex gap-2">
+      <dt class="text-gray-500 w-36 shrink-0">{{ t.device.detail.field_mac }}</dt>
+      <dd class="font-mono text-xs">{{ matter_network.mac_address }}{{ src_badge(FieldSource.matter) }}</dd>
+    </div>
+    {% endif %}
+    {% if matter_network.uptime_humanized %}
+    <div class="flex gap-2">
+      <dt class="text-gray-500 w-36 shrink-0">{{ t.device.detail.field_uptime }}</dt>
+      <dd class="font-mono text-xs">{{ matter_network.uptime_humanized }}{{ src_badge(FieldSource.matter) }}</dd>
+    </div>
+    {% endif %}
+    {% if matter_network.reboot_count is not none %}
+    <div class="flex gap-2">
+      <dt class="text-gray-500 w-36 shrink-0">{{ t.device.detail.field_reboots }}</dt>
+      <dd class="font-mono text-xs">{{ matter_network.reboot_count }}{{ src_badge(FieldSource.matter) }}</dd>
+    </div>
+    {% endif %}
+    {% if matter_network.ipv4_addresses %}
+    <div class="flex gap-2">
+      <dt class="text-gray-500 w-36 shrink-0">{{ t.device.detail.field_ipv4 }}</dt>
+      <dd class="font-mono text-xs">{{ matter_network.ipv4_addresses | join(", ") }}{{ src_badge(FieldSource.matter) }}</dd>
+    </div>
+    {% endif %}
+    {% if matter_network.ipv6_addresses %}
+    <div class="flex gap-2">
+      <dt class="text-gray-500 w-36 shrink-0">{{ t.device.detail.field_ipv6 }}</dt>
+      <dd class="font-mono text-xs space-y-0.5">
+        {% for ip in matter_network.ipv6_addresses %}<div>{{ ip }}{% if loop.last %}{{ src_badge(FieldSource.matter) }}{% endif %}</div>{% endfor %}
+      </dd>
+    </div>
+    {% endif %}
+
+    {% if matter_network.network_type == 'wifi' %}
+    {% if matter_network.bssid or matter_network.rssi is not none or matter_network.wifi_version or matter_network.ssid or matter_network.channel is not none or matter_network.security_type %}
+    {# device-specific Wi-Fi rows #}
+    {% if matter_network.bssid %}
+    <div class="flex gap-2">
+      <dt class="text-gray-500 w-36 shrink-0">{{ t.device.detail.field_bssid }}</dt>
+      <dd class="font-mono text-xs">{{ matter_network.bssid }}{{ src_badge(FieldSource.matter) }}</dd>
+    </div>
+    {% endif %}
+    {% if matter_network.rssi is not none %}
+    <div class="flex gap-2">
+      <dt class="text-gray-500 w-36 shrink-0">{{ t.device.detail.field_rssi }}</dt>
+      <dd class="font-mono text-xs">{{ matter_network.rssi }} dBm
+        <span class="text-gray-400 ml-1">·
+          {% if matter_network.rssi >= -55 %}{{ t.device.detail.rssi_excellent }}
+          {% elif matter_network.rssi >= -65 %}{{ t.device.detail.rssi_good }}
+          {% elif matter_network.rssi >= -75 %}{{ t.device.detail.rssi_fair }}
+          {% else %}{{ t.device.detail.rssi_poor }}{% endif %}
+        </span>{{ src_badge(FieldSource.matter) }}
+      </dd>
+    </div>
+    {% endif %}
+    {% if matter_network.wifi_version %}
+    <div class="flex gap-2">
+      <dt class="text-gray-500 w-36 shrink-0">{{ t.device.detail.field_wifi_version }}</dt>
+      <dd class="font-mono text-xs">{{ matter_network.wifi_version }}{{ src_badge(FieldSource.matter) }}</dd>
+    </div>
+    {% endif %}
+    {# network-global Wi-Fi rows #}
+    {% if matter_network.ssid or matter_network.channel is not none or matter_network.security_type %}
+    <details class="mt-2">
+      <summary class="cursor-pointer text-gray-500 text-xs select-none">{{ t.device.detail.wifi_network }}</summary>
+      <dl class="mt-2 space-y-1.5 text-xs">
+        {% if matter_network.ssid %}
+        <div class="flex gap-2">
+          <dt class="text-gray-400 w-36 shrink-0">{{ t.device.detail.field_ssid }}</dt>
+          <dd class="font-mono">{{ matter_network.ssid }}{{ src_badge(FieldSource.matter) }}</dd>
+        </div>
+        {% endif %}
+        {% if matter_network.channel is not none %}
+        <div class="flex gap-2">
+          <dt class="text-gray-400 w-36 shrink-0">{{ t.device.detail.field_channel }}</dt>
+          <dd class="font-mono">{{ matter_network.channel }}{{ src_badge(FieldSource.matter) }}</dd>
+        </div>
+        {% endif %}
+        {% if matter_network.security_type %}
+        <div class="flex gap-2">
+          <dt class="text-gray-400 w-36 shrink-0">{{ t.device.detail.field_security }}</dt>
+          <dd class="font-mono">{{ matter_network.security_type }}{{ src_badge(FieldSource.matter) }}</dd>
+        </div>
+        {% endif %}
+      </dl>
+    </details>
+    {% endif %}
+    {% else %}
+    <p class="text-sm text-gray-400 italic">{{ t.device.detail.wifi_unavail }}</p>
+    {% endif %}{# /wifi details #}
+    {% endif %}{# /wifi #}
+
+    {% if matter_network.network_type == 'thread' %}
+    {% if matter_network.thread_network_name or matter_network.thread_channel is not none or matter_network.thread_role or matter_network.thread_pan_id is not none or matter_network.thread_counters or thread_link %}
+    {# device-specific Thread rows #}
+    {% if matter_network.thread_role %}
+    <div class="flex gap-2">
+      <dt class="text-gray-500 w-36 shrink-0">{{ t.device.detail.field_routing_role }}</dt>
+      <dd class="font-mono text-xs">{{ matter_network.thread_role }}{{ src_badge(FieldSource.matter) }}</dd>
+    </div>
+    {% elif thread_link %}
+    <div class="flex gap-2">
+      <dt class="text-gray-500 w-36 shrink-0">{{ t.device.detail.field_routing_role }}</dt>
+      <dd class="font-mono text-xs">
+        {% if thread_link.thread_role == 'unknown' %}<span class="text-gray-400 italic">{{ thread_link.role_display }}</span>{% else %}{{ thread_link.role_display }}{% endif %}{{ src_badge(FieldSource.otbr) }}
+      </dd>
+    </div>
+    {% endif %}
+    {% if thread_link %}
+    {% if thread_link.link_margin is not none %}
+    <div class="flex gap-2">
+      <dt class="text-gray-500 w-36 shrink-0">{{ t.device.detail.field_link_margin }}</dt>
+      <dd class="font-mono text-xs">{{ thread_link.link_margin }} dB{{ src_badge(FieldSource.otbr) }}</dd>
+    </div>
+    {% endif %}
+    {% if thread_link.average_rssi is not none %}
+    <div class="flex gap-2">
+      <dt class="text-gray-500 w-36 shrink-0">{{ t.device.detail.field_avg_rssi }}</dt>
+      <dd class="font-mono text-xs">{{ thread_link.rssi_display }}{{ src_badge(FieldSource.otbr) }}</dd>
+    </div>
+    {% endif %}
+    {% if thread_link.connection_time is not none %}
+    <div class="flex gap-2">
+      <dt class="text-gray-500 w-36 shrink-0">{{ t.device.detail.field_connected }}</dt>
+      <dd class="font-mono text-xs">{{ thread_link.connection_time_display }}{{ src_badge(FieldSource.otbr) }}</dd>
+    </div>
+    {% endif %}
+    {% if thread_link.frame_error_rate is not none %}
+    <div class="flex gap-2">
+      <dt class="text-gray-500 w-36 shrink-0">{{ t.device.detail.field_frame_error_rate }}</dt>
+      <dd class="font-mono text-xs">{{ thread_link.frame_error_rate_display }}{{ src_badge(FieldSource.otbr) }}</dd>
+    </div>
+    {% endif %}
+    {% if thread_link.link_quality is not none %}
+    <div class="flex gap-2">
+      <dt class="text-gray-500 w-36 shrink-0">{{ t.device.detail.field_link_quality }}</dt>
+      <dd class="font-mono text-xs">{{ thread_link.link_quality }} / 3{{ src_badge(FieldSource.otbr) }}</dd>
+    </div>
+    {% endif %}
+    {% endif %}
+    {# network-global Thread rows #}
+    {% if matter_network.thread_network_name or matter_network.thread_channel is not none or matter_network.thread_pan_id is not none or matter_network.thread_extended_pan_id is not none or matter_network.thread_mesh_local_prefix or matter_network.thread_network_attrs %}
+    <details class="mt-2">
+      <summary class="cursor-pointer text-gray-500 text-xs select-none">{{ t.device.detail.thread_network }}</summary>
+      <dl class="mt-2 space-y-1.5 text-xs">
+        {% if matter_network.thread_network_name %}
+        <div class="flex gap-2">
+          <dt class="text-gray-400 w-36 shrink-0">{{ t.device.detail.field_net_name }}</dt>
+          <dd class="font-mono">{{ matter_network.thread_network_name }}{{ src_badge(FieldSource.matter) }}</dd>
+        </div>
+        {% endif %}
+        {% if matter_network.thread_channel is not none %}
+        <div class="flex gap-2">
+          <dt class="text-gray-400 w-36 shrink-0">{{ t.device.detail.field_channel }}</dt>
+          <dd class="font-mono">{{ matter_network.thread_channel }}{{ src_badge(FieldSource.matter) }}</dd>
+        </div>
+        {% endif %}
+        {% if matter_network.thread_pan_id is not none %}
+        <div class="flex gap-2">
+          <dt class="text-gray-400 w-36 shrink-0">{{ t.device.detail.field_pan_id }}</dt>
+          <dd class="font-mono">0x{{ "%04X" | format(matter_network.thread_pan_id) }}{{ src_badge(FieldSource.matter) }}</dd>
+        </div>
+        {% endif %}
+        {% if matter_network.thread_extended_pan_id is not none %}
+        <div class="flex gap-2">
+          <dt class="text-gray-400 w-36 shrink-0">{{ t.device.detail.field_ext_pan_id }}</dt>
+          <dd class="font-mono">{{ "0x%016X" | format(matter_network.thread_extended_pan_id) }}{{ src_badge(FieldSource.matter) }}</dd>
+        </div>
+        {% endif %}
+        {% if matter_network.thread_mesh_local_prefix %}
+        <div class="flex gap-2">
+          <dt class="text-gray-400 w-36 shrink-0">{{ t.device.detail.field_mesh_prefix }}</dt>
+          <dd class="font-mono">{{ matter_network.thread_mesh_local_prefix }}{{ src_badge(FieldSource.matter) }}</dd>
+        </div>
+        {% endif %}
+        {% for label, value in matter_network.thread_network_attrs.items() %}
+        <div class="flex gap-2">
+          <dt class="text-gray-400 w-36 shrink-0">{{ label }}</dt>
+          <dd class="font-mono text-xs">{{ value }}{{ src_badge(FieldSource.matter) }}</dd>
+        </div>
+        {% endfor %}
+      </dl>
+    </details>
+    {% endif %}
+    {% if matter_network.thread_counters %}
+    <details class="mt-2">
+      <summary class="cursor-pointer text-gray-500 text-xs select-none">{{ t.device.detail.adv_counters }}</summary>
+      <dl class="mt-2 space-y-1.5 text-xs">
+        {% for label, value in matter_network.thread_counters.items() %}
+        <div class="flex gap-2">
+          <dt class="text-gray-400 w-44 shrink-0">{{ label }}</dt>
+          <dd class="font-mono text-xs">{{ value }}{{ src_badge(FieldSource.matter) }}</dd>
+        </div>
+        {% endfor %}
+      </dl>
+    </details>
+    {% endif %}
+    {% else %}
+    <p class="text-sm text-gray-400 italic">{{ t.device.detail.thread_unavail }}</p>
+    {% endif %}{# /thread details #}
+    {% endif %}{# /thread #}
+  </dl>
+  {% endif %}{# /interface_name #}
+  {% else %}{# mDNS-only networking #}
+  <dl class="space-y-2 text-sm">
+    {% if mdns_networking.hostname %}
+    <div class="flex gap-2">
+      <dt class="text-gray-500 w-36 shrink-0">{{ t.device.detail.field_hostname }}</dt>
+      <dd class="font-mono text-xs">{{ mdns_networking.hostname }}{{ src_badge(FieldSource.mdns) }}</dd>
+    </div>
+    {% endif %}
+    {% if mdns_networking.ipv4_addresses %}
+    <div class="flex gap-2">
+      <dt class="text-gray-500 w-36 shrink-0">{{ t.device.detail.field_ipv4 }}</dt>
+      <dd class="font-mono text-xs">{{ mdns_networking.ipv4_addresses | join(", ") }}{{ src_badge(FieldSource.mdns) }}</dd>
+    </div>
+    {% endif %}
+    {% if mdns_networking.ipv6_addresses %}
+    <div class="flex gap-2">
+      <dt class="text-gray-500 w-36 shrink-0">{{ t.device.detail.field_ipv6 }}</dt>
+      <dd class="font-mono text-xs space-y-0.5">
+        {% for ip in mdns_networking.ipv6_addresses %}<div>{{ ip }}{% if loop.last %}{{ src_badge(FieldSource.mdns) }}{% endif %}</div>{% endfor %}
+      </dd>
+    </div>
+    {% endif %}
+    {% if mdns_networking.port %}
+    <div class="flex gap-2">
+      <dt class="text-gray-500 w-36 shrink-0">{{ t.device.detail.field_hap_port }}</dt>
+      <dd class="font-mono text-xs">{{ mdns_networking.port }}{{ src_badge(FieldSource.mdns) }}</dd>
+    </div>
+    {% endif %}
+  </dl>
+  {% endif %}{# /matter_membership #}
+</div>
+{% endif %}
+
+<!-- Integrations: one sub-section per integration - curated fields + Link/Unlink
+     when actionable + a collapsed-by-default "Data" snapshot (B.12/B.15) -->
+{% set ha_show = ha_link is not none or ha_client_status == 'connected' %}
+{% if matter_membership or thread_link or ha_show or integration_data %}
+<div class="bg-white rounded shadow p-5 mb-6">
+  <h2 class="text-lg font-semibold mb-4">{{ t.device.detail.integrations }}</h2>
+  <div class="divide-y divide-gray-100">
+
+    {% if matter_membership or integration_data_by_slug.get('matter_server') %}
+    <div class="py-5 first:pt-0 last:pb-0">
+      <div class="flex items-center justify-between mb-3">
+        <h3 class="text-sm font-semibold text-gray-500 uppercase">{{ integration_icon(integration_icons.get('matter_server')) }}Matter Server</h3>
+        <div class="flex gap-1.5">
+          {% for action in applicable_device_actions.get('matter_server', []) %}
+            {{ device_action_button(action, device.id, 'matter_server') }}
+          {% endfor %}
+          {% if matter_membership %}
+          <button type="button"
+                  onclick="unlinkMatterDevice('{{ device.id }}')"
+                  class="no-print text-xs border border-gray-300 px-3 py-1 rounded hover:bg-gray-50 text-gray-600">
+            Unlink
+          </button>
+          {% endif %}
+        </div>
+      </div>
+      {{ integration_data_details(integration_data_by_slug.get('matter_server')) }}
+      {% if device_fabrics %}
+      <dl class="space-y-2 text-sm mt-3">
+        <div class="flex gap-2">
+          <dt class="text-gray-500 w-36 shrink-0">{{ t.device.detail.fabrics }}</dt>
+          <dd>
+            <ul class="space-y-0.5">
+              {% for fab in device_fabrics %}
+              <li class="flex items-center gap-1.5">
+                <span class="font-mono text-xs text-gray-500">{{ fab.fabric_id[-8:] }}</span>
+                <span>{{ fab.vendor_name or fab.fabric_label or fab.controller }}</span>
+                {% if fab.vendor_name and (fab.fabric_label or fab.controller) and (fab.fabric_label or fab.controller) != fab.vendor_name %}
+                <span class="text-gray-400 text-xs">({{ fab.fabric_label or fab.controller }})</span>
+                {% endif %}
+              </li>
+              {% endfor %}
+            </ul>
+          </dd>
+        </div>
+      </dl>
+      {% endif %}
+    </div>
+    {% endif %}
+
+    {% if thread_link or integration_data_by_slug.get('otbr') %}
+    <div class="py-5 first:pt-0 last:pb-0">
+      <div class="flex items-center justify-between mb-3">
+        <h3 class="text-sm font-semibold text-gray-500 uppercase">{{ integration_icon(integration_icons.get('otbr')) }}Thread Network</h3>
+        <div class="flex gap-1.5">
+          {% for action in applicable_device_actions.get('otbr', []) %}
+            {{ device_action_button(action, device.id, 'otbr') }}
+          {% endfor %}
+        </div>
+      </div>
+      {{ integration_data_details(integration_data_by_slug.get('otbr')) }}
+    </div>
+    {% endif %}
+
+    {% if ha_show or integration_data_by_slug.get('ha_core') %}
+    <div class="py-5 first:pt-0 last:pb-0">
+      <div class="flex items-center justify-between mb-3">
+        <h3 class="text-sm font-semibold text-gray-500 uppercase">{{ integration_icon(integration_icons.get('ha_core')) }}Home Assistant</h3>
+        {% if ha_link %}
+        <button type="button"
+                onclick="unlinkHaDevice('{{ device.id }}')"
+                class="no-print text-xs border border-gray-300 px-3 py-1 rounded hover:bg-gray-50 text-gray-600">
+          Unlink
+        </button>
+        {% endif %}
+      </div>
+      {% if ha_link %}
+      {% elif ha_client_status == 'connected' %}
+      <p class="text-sm text-gray-500 mb-3">{{ t.device.detail.ha_not_linked }}</p>
+      <button type="button" onclick="openHaLinkPicker('{{ device.id }}')"
+              class="border border-blue-300 text-blue-700 px-3 py-1.5 rounded text-sm hover:bg-blue-50">
+        Link to HA device…
+      </button>
+      <!-- HA link picker -->
+      <div id="ha-link-picker" class="hidden mt-4">
+        <input type="text" id="ha-picker-search" placeholder="Search HA devices…"
+               oninput="filterHaDevices(this.value)"
+               class="w-full border border-gray-300 rounded px-3 py-2 text-sm mb-2 focus:outline-none focus:ring-1 focus:ring-blue-400">
+        <div id="ha-picker-list" class="max-h-60 overflow-y-auto border border-gray-200 rounded divide-y divide-gray-100 text-sm"></div>
+      </div>
+      {% endif %}
+      {{ integration_data_details(integration_data_by_slug.get('ha_core'),
+           prepend={'HA device ID': ha_link.external_id ~ (' (manual)' if ha_link.link_source == 'manual' else '')} if ha_link else none) }}
+    </div>
+    {% endif %}
+
+    {# B.15: any integration not claimed by a curated block above (mDNS, etc.)
+       renders as its own block - display name + collapsed "Data" snapshot. #}
+    {% for row in integration_data if row.integration not in ['matter_server', 'otbr', 'ha_core'] %}
+    <div class="py-5 first:pt-0 last:pb-0">
+      <h3 class="text-sm font-semibold text-gray-500 uppercase">{{ integration_icon(integration_icons.get(row.integration)) }}{{ row._display_name }}</h3>
+      {{ integration_data_details(row) }}
+    </div>
+    {% endfor %}
+
+  </div>
+</div>
+{% endif %}
+
+{% if device.notes %}
+<!-- Notes -->
+<div class="bg-white rounded shadow p-5 mb-8">
+  <h2 class="text-sm font-semibold text-gray-500 uppercase mb-2">{{ t.device.detail.notes }}</h2>
+  <p class="text-sm text-gray-700 whitespace-pre-wrap">{{ device.notes }}</p>
+  <p class="mt-1">{{ src_badge(device.notes_source) }}</p>
+</div>
+{% endif %}
+
+<!-- Properties -->
+<div class="bg-white rounded shadow p-5 mb-8">
+  <h2 class="text-lg font-semibold mb-4">{{ t.device.detail.properties }}</h2>
+
+  {% include "properties/_list.html" %}
+
+  <!-- Add property form -->
+  <form
+    hx-post="{{ url('/devices/' + device.id + '/properties') }}"
+    hx-target="#property-list"
+    hx-swap="outerHTML"
+    hx-on::after-request="this.reset()"
+    class="mt-5 pt-4 border-t border-gray-100 no-print">
+    <h3 class="text-sm font-medium text-gray-700 mb-3">{{ t.device.detail.prop_add_heading }}</h3>
+    <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+      <div>
+        <label class="block text-xs text-gray-500 mb-1">{{ t.device.detail.prop_type_label }}</label>
+        <select name="cred_type"
+                class="w-full border border-gray-300 rounded px-2 py-1.5 text-sm">
+          {% for ptype in prop_types %}
+          <option value="{{ ptype.value }}">{{ ptype.value }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div>
+        <label class="block text-xs text-gray-500 mb-1">{{ t.device.detail.prop_value_label }}</label>
+        <input type="text" name="value" required
+               class="w-full border border-gray-300 rounded px-2 py-1.5 text-sm">
+      </div>
+      <div>
+        <label class="block text-xs text-gray-500 mb-1">{{ t.device.detail.prop_label_label }}</label>
+        <input type="text" name="label"
+               class="w-full border border-gray-300 rounded px-2 py-1.5 text-sm">
+      </div>
+    </div>
+    <button type="submit"
+            class="mt-3 bg-blue-600 text-white px-4 py-1.5 rounded text-sm hover:bg-blue-700">
+      {{ t.device.detail.prop_add_btn }}
+    </button>
+  </form>
+</div>
+
+<!-- Attachments -->
+<div class="bg-white rounded shadow p-5 no-print">
+  <h2 class="text-lg font-semibold mb-4">{{ t.device.detail.attachments }}</h2>
+  {% include "attachments/_grid.html" %}
+
+  <!-- Upload zone -->
+  <form
+    id="upload-form"
+    hx-post="{{ url('/api/devices/' + device.id + '/attachments') }}"
+    hx-target="#attachment-grid"
+    hx-swap="outerHTML"
+    hx-encoding="multipart/form-data"
+    hx-on::after-request="this.reset(); document.getElementById('drop-zone').classList.remove('border-blue-400','bg-blue-50')"
+    class="mt-4 pt-4 border-t border-gray-100">
+    <div id="drop-zone"
+         class="border-2 border-dashed border-gray-300 rounded p-6 text-center text-sm text-gray-500 hover:border-blue-400 hover:bg-blue-50 transition-colors cursor-pointer"
+         onclick="document.getElementById('att-file').click()"
+         ondragover="event.preventDefault();this.classList.add('border-blue-400','bg-blue-50')"
+         ondragleave="this.classList.remove('border-blue-400','bg-blue-50')"
+         ondrop="event.preventDefault();this.classList.remove('border-blue-400','bg-blue-50');document.getElementById('att-file').files=event.dataTransfer.files;document.getElementById('upload-form').dispatchEvent(new Event('submit',{bubbles:true}))">
+      <p>{{ t.device.detail.att_drop }}</p>
+      <p class="text-xs text-gray-400 mt-1">{{ t.device.detail.att_hint }}</p>
+    </div>
+    <input type="file" id="att-file" name="file" accept="image/*,application/pdf"
+           class="hidden"
+           onchange="if(this.files.length)document.getElementById('upload-form').dispatchEvent(new Event('submit',{bubbles:true}))">
+    <div id="upload-error" class="hidden mt-2 text-sm text-red-600"></div>
+  </form>
+  <script>
+  htmx.on('#upload-form', 'htmx:responseError', function(evt) {
+    var el = document.getElementById('upload-error');
+    try { el.textContent = JSON.parse(evt.detail.xhr.responseText).detail; }
+    catch(e) { el.textContent = {{ t.device.detail.upload_failed | tojson }} + ' (HTTP ' + evt.detail.xhr.status + ')'; }
+    el.classList.remove('hidden');
+  });
+  htmx.on('#upload-form', 'htmx:afterOnLoad', function() {
+    document.getElementById('upload-error').classList.add('hidden');
+  });
+  </script>
+</div>
+
+<script>
+const _haApiBase = "{{ url('/api') }}";
+const _deviceId = "{{ device.id }}";
+
+async function unlinkHaDevice(deviceId) {
+  if (!await openModal({title: {{ t.device.detail.unlink_ha_title | tojson }}, body: {{ t.device.detail.unlink_ha_body | tojson }}, confirmLabel: {{ t.device.detail.ha_unlink | tojson }}, destructive: true})) return;
+  const resp = await fetch(`${_haApiBase}/devices/${deviceId}/ha-link`, {
+    method: 'PATCH',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({ha_device_id: null}),
+  });
+  if (resp.ok) { window.location.reload(); }
+  else { alert({{ t.device.detail.unlink_failed | tojson }} + ': ' + resp.status); }
+}
+
+let _haDevices = [];
+
+async function openHaLinkPicker(deviceId) {
+  const picker = document.getElementById('ha-link-picker');
+  picker.classList.remove('hidden');
+  const list = document.getElementById('ha-picker-list');
+  list.innerHTML = '<p class="px-3 py-2 text-gray-400 text-xs">' + {{ t.device.detail.ha_pick_loading | tojson }} + '</p>';
+  const resp = await fetch(`${_haApiBase}/integrations/ha-core/devices`);
+  if (!resp.ok) { list.innerHTML = '<p class="px-3 py-2 text-red-500 text-xs">' + {{ t.device.detail.ha_pick_load_failed | tojson }} + '</p>'; return; }
+  _haDevices = await resp.json();
+  const deviceProtocol = '{{ device.protocol.value if device.protocol else "" }}';
+  // Filter by protocol: only show HA devices matching the MR device's protocol
+  _haDevices = _haDevices.filter(d => !d.protocol || !deviceProtocol || d.protocol === deviceProtocol);
+  renderHaDeviceList(_haDevices, deviceId);
+}
+
+function filterHaDevices(q) {
+  const filtered = q
+    ? _haDevices.filter(d =>
+        (d.name || '').toLowerCase().includes(q.toLowerCase()) ||
+        (d.manufacturer || '').toLowerCase().includes(q.toLowerCase()) ||
+        (d.model || '').toLowerCase().includes(q.toLowerCase()))
+    : _haDevices;
+  renderHaDeviceList(filtered, _deviceId);
+}
+
+function renderHaDeviceList(devices, deviceId) {
+  const list = document.getElementById('ha-picker-list');
+  if (!devices.length) { list.innerHTML = '<p class="px-3 py-2 text-gray-400 text-xs">' + {{ t.device.detail.ha_pick_all_linked | tojson }} + '</p>'; return; }
+  list.innerHTML = devices.map(d => `
+    <button type="button" onclick="linkHaDevice('${deviceId}','${d.id}')"
+            class="w-full text-left px-3 py-2 hover:bg-blue-50 transition-colors">
+      <span class="font-medium text-sm">${d.name || d.id}</span>
+      ${d.area_name ? `<span class="ml-2 text-xs text-gray-400">${d.area_name}</span>` : ''}
+      ${d.manufacturer ? `<br><span class="text-xs text-gray-400">${d.manufacturer}${d.model ? ' · ' + d.model : ''}</span>` : ''}
+    </button>`).join('');
+}
+
+async function linkHaDevice(deviceId, haDeviceId) {
+  const resp = await fetch(`${_haApiBase}/devices/${deviceId}/ha-link`, {
+    method: 'PATCH',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({ha_device_id: haDeviceId}),
+  });
+  if (resp.ok) { window.location.reload(); }
+  else { alert({{ t.device.detail.link_failed | tojson }} + ': ' + resp.status); }
+}
+
+async function unlinkMatterDevice(deviceId) {
+  if (!await openModal({title: {{ t.device.detail.unlink_matter_title | tojson }}, body: {{ t.device.detail.unlink_matter_body | tojson }}, confirmLabel: {{ t.device.detail.ha_unlink | tojson }}, destructive: true})) return;
+  const resp = await fetch(`${_haApiBase}/devices/${deviceId}/matter-link`, {method: 'DELETE'});
+  if (resp.ok) { window.location.reload(); }
+  else { alert({{ t.device.detail.unlink_failed | tojson }} + ': ' + resp.status); }
+}
+</script>
+{% endblock %}

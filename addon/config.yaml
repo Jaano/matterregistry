@@ -1,0 +1,40 @@
+name: "Matter Registry"
+version: "0.3.12"
+slug: matter-registry
+description: "Registry for Matter devices."
+url: "https://github.com/Jaano/matterregistry"
+arch:
+  - amd64
+  - aarch64
+image: "ghcr.io/jaano/matterregistry"
+homeassistant: "2026.1.1"
+init: false
+ingress: true
+ingress_port: 5591
+homeassistant_api: true
+# Host networking is required for mDNS HomeKit discovery (D.3) - UDP 5353
+# multicast is link-local and cannot reach a bridged container. Ingress still
+# works; discovery itself is opt-in via the mdns_enabled option below.
+host_network: true
+panel_icon: mdi:database-lock
+panel_title: "Matter Registry"
+map:
+  - addon_config:rw
+ports:
+  "5591/tcp": null
+ports_description:
+  "5591/tcp": "Direct REST API port - must be mapped below AND direct_api enabled to use"
+options:
+  log_level: "info"
+  python_matter_server_url: "ws://core-matter-server:5580/ws"
+  otbr_url: "http://core-openthread-border-router:8081"
+  integration_sync_interval: 600
+  mdns_enabled: false
+  direct_api: false
+schema:
+  log_level: "list(trace|debug|info|warning|error|critical)"
+  python_matter_server_url: "str?"
+  otbr_url: "str?"
+  integration_sync_interval: "int(-1,86400)"
+  mdns_enabled: "bool?"
+  direct_api: "bool?"

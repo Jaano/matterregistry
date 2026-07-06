@@ -1,0 +1,13 @@
+configuration:
+  log_level:
+    name: "Logi tase"
+    description: "Rakenduse logide üksikasjalikkus (trace, debug, info, warning, error, critical)."
+  python_matter_server_url:
+    name: "Matter Serveri URL"
+    description: "python-matter-server WebSocketi URL (nt ws://core-matter-server:5580/ws). Jäta tühjaks, et Matter Serveri lõimimine välja lülitada."
+  otbr_url:
+    name: "OpenThread Border Routeri URL"
+    description: "OTBR REST URL (nt http://core-openthread-border-router:8081). Jäta tühjaks, et OTBR lõimimine välja lülitada."
+  direct_api:
+    name: "Luba otse REST API"
+    description: "Luba juurdepääs REST API-le pordil 5591 ilma Home Assistanti Ingressita. Nõuab pordi seadistamist ülal jaotises Võrk. HOIATUS: API-l pole autentimist - luba ainult usaldatud võrkudes."

@@ -1,0 +1,105 @@
+{% extends "base.html" %}
+{% block title %}{{ t.device.list.title }} - {{ t.nav.brand }}{% endblock %}
+{% block content %}
+<div class="flex items-center justify-between mb-4">
+  <h1 class="text-2xl font-bold">{{ t.device.list.title }}</h1>
+  <div class="flex items-center gap-2">
+    <a href="{{ url('/devices/new') }}"
+       class="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 text-sm font-medium">
+      {{ t.device.list.new_btn }}
+    </a>
+    <button type="button"
+            onclick="syncAll()"
+            id="sync-all-btn"
+            data-api-base="{{ url('/api/integrations') }}"
+            data-label-ms="{{ ms_long_name }}"
+            data-label-otbr="{{ otbr_long_name }}"
+            data-label-ha="{{ ha_long_name }}"
+            data-label-mdns="{{ mdns_long_name }}"
+            title="{{ t.device.list.sync_all_aria }}"
+            aria-label="{{ t.device.list.sync_all_aria }}"
+            {% if not any_integration_configured %}disabled{% endif %}
+            class="bg-blue-600 text-white px-4 h-9 rounded hover:bg-blue-700 text-sm font-medium disabled:opacity-50 inline-flex items-center justify-center">
+      <span class="icon-sync-circle" role="img" style="width:1.76em;height:1.76em"></span>
+    </button>
+  </div>
+</div>
+
+<!-- Search + filters -->
+<div class="bg-white rounded shadow p-4 mb-4">
+  <div class="flex flex-wrap gap-3 items-end">
+    <div class="flex-1 min-w-48">
+      <label class="block text-xs text-gray-500 mb-1">{{ t.device.list.search_label }}</label>
+      <input
+        type="search"
+        id="search-q"
+        name="q"
+        value="{{ q }}"
+        placeholder="{{ t.device.list.search_placeholder }}"
+        class="w-full border border-gray-300 rounded px-3 py-1.5 text-sm"
+        hx-get="{{ url('/devices') }}"
+        hx-trigger="keyup changed delay:300ms, search"
+        hx-target="#device-rows"
+        hx-swap="outerHTML"
+        hx-include="#filter-status,#filter-vendor,#filter-room">
+    </div>
+    <div>
+      <label class="block text-xs text-gray-500 mb-1">{{ t.device.list.status_label }}</label>
+      <select id="filter-status" name="status"
+              class="border border-gray-300 rounded px-2 py-1.5 text-sm"
+              hx-get="{{ url('/devices') }}"
+              hx-trigger="change"
+              hx-target="#device-rows"
+              hx-swap="outerHTML"
+              hx-include="#search-q,#filter-vendor,#filter-room">
+        <option value="" {% if not active_status %}selected{% endif %}>{{ t.device.list.all_statuses }}</option>
+        <option value="active" {% if active_status == 'active' %}selected{% endif %}>{{ t.device.list.status_active }}</option>
+        <option value="retired" {% if active_status == 'retired' %}selected{% endif %}>{{ t.device.list.status_retired }}</option>
+        <option value="spare" {% if active_status == 'spare' %}selected{% endif %}>{{ t.device.list.status_spare }}</option>
+        <option value="hidden" {% if active_status == 'hidden' %}selected{% endif %}>{{ t.device.list.status_hidden }}</option>
+      </select>
+    </div>
+    {% if vendors %}
+    <div>
+      <label class="block text-xs text-gray-500 mb-1">{{ t.device.list.vendor_label }}</label>
+      <select id="filter-vendor" name="vendor"
+              class="border border-gray-300 rounded px-2 py-1.5 text-sm"
+              hx-get="{{ url('/devices') }}"
+              hx-trigger="change"
+              hx-target="#device-rows"
+              hx-swap="outerHTML"
+              hx-include="#search-q,#filter-status,#filter-room">
+        <option value="" {% if not active_vendor %}selected{% endif %}>{{ t.device.list.all_vendors }}</option>
+        {% for v in vendors %}
+        <option value="{{ v }}" {% if active_vendor == v %}selected{% endif %}>{{ v }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    {% endif %}
+    {% if rooms %}
+    <div>
+      <label class="block text-xs text-gray-500 mb-1">{{ t.device.list.room_label }}</label>
+      <select id="filter-room" name="room"
+              class="border border-gray-300 rounded px-2 py-1.5 text-sm"
+              hx-get="{{ url('/devices') }}"
+              hx-trigger="change"
+              hx-target="#device-rows"
+              hx-swap="outerHTML"
+              hx-include="#search-q,#filter-status,#filter-vendor">
+        <option value="" {% if not active_room %}selected{% endif %}>{{ t.device.list.all_rooms }}</option>
+        {% for r in rooms %}
+        <option value="{{ r }}" {% if active_room == r %}selected{% endif %}>{{ r }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    {% endif %}
+    {% if any_filter %}
+    <div>
+      <a href="{{ url('/devices') }}" class="text-xs text-blue-600 hover:underline">{{ t.device.list.clear_filters }}</a>
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+{% include "devices/_rows.html" %}
+{% endblock %}

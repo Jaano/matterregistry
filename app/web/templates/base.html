@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="{{ lang | default('en') }}">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% block title %}Matter Registry{% endblock %}</title>
+  <link rel="icon" type="image/svg+xml" href="{{ url('/static/favicon.svg') }}">
+  <link rel="stylesheet" href="{{ url('/static/icons.css') }}">
+  <script src="{{ url('/static/ui_prefs.js') }}"></script>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/htmx.org@2.0.4/dist/htmx.min.js"></script>
+  <style>
+    /* Dark-mode overrides keyed off `.dark` on <html>. Lets every template
+       use the same light-mode classes (bg-white, text-gray-*, border-gray-*)
+       and get a sensible dark rendering without per-template `dark:` variants. */
+    html.dark { color-scheme: dark; }
+    html.dark body { background-color: #0f172a; color: #f3f4f6; }
+
+    /* Card / surface backgrounds */
+    html.dark .bg-white { background-color: #1e293b; }
+    html.dark .bg-gray-50 { background-color: #111827; }
+    html.dark .bg-gray-100 { background-color: #374151; }
+    html.dark .bg-gray-200 { background-color: #4b5563; }
+
+    /* Text */
+    html.dark .text-gray-900 { color: #f3f4f6; }
+    html.dark .text-gray-800 { color: #f3f4f6; }
+    html.dark .text-gray-700 { color: #e5e7eb; }
+    html.dark .text-gray-600 { color: #d1d5db; }
+    html.dark .text-gray-500 { color: #9ca3af; }
+    html.dark .text-gray-400 { color: #6b7280; }
+
+    /* Borders */
+    html.dark .border-gray-100 { border-color: #334155; }
+    html.dark .border-gray-200 { border-color: #334155; }
+    html.dark .border-gray-300 { border-color: #475569; }
+
+    /* Hovers (must use \: escape because that's how CSS sees the class name) */
+    html.dark .hover\:bg-gray-50:hover { background-color: #374151; }
+    html.dark .hover\:bg-gray-100:hover { background-color: #4b5563; }
+    html.dark .hover\:text-gray-600:hover { color: #d1d5db; }
+    html.dark .hover\:text-gray-700:hover { color: #e5e7eb; }
+    html.dark .hover\:text-gray-800:hover { color: #f3f4f6; }
+    html.dark .hover\:bg-blue-50:hover { background-color: rgba(59, 130, 246, 0.15); }
+    html.dark .hover\:bg-red-50:hover { background-color: rgba(239, 68, 68, 0.15); }
+
+    /* Form controls - let the browser theme native bits, then re-skin our utility classes */
+    html.dark input[type="text"],
+    html.dark input[type="search"],
+    html.dark input[type="date"],
+    html.dark input[type="file"],
+    html.dark input[type="password"],
+    html.dark input[type="email"],
+    html.dark input[type="url"],
+    html.dark input[type="number"],
+    html.dark select,
+    html.dark textarea {
+      background-color: #1f2937;
+      color: #f3f4f6;
+      border-color: #475569;
+    }
+    html.dark input::placeholder,
+    html.dark textarea::placeholder { color: #6b7280; }
+
+    /* Pale state-badge backgrounds (used in source badges, status pills) need
+       a bit more punch on dark surfaces. Text colors stay readable as-is. */
+    html.dark .bg-blue-50 { background-color: rgba(59, 130, 246, 0.2); }
+    html.dark .bg-purple-50 { background-color: rgba(168, 85, 247, 0.2); }
+    html.dark .bg-indigo-50 { background-color: rgba(99, 102, 241, 0.2); }
+    html.dark .bg-green-50 { background-color: rgba(34, 197, 94, 0.2); }
+    html.dark .bg-teal-50 { background-color: rgba(20, 184, 166, 0.2); }
+    html.dark .bg-red-50 { background-color: rgba(239, 68, 68, 0.2); }
+    html.dark .bg-yellow-50 { background-color: rgba(234, 179, 8, 0.2); }
+    html.dark .bg-blue-100 { background-color: rgba(59, 130, 246, 0.25); }
+    html.dark .bg-green-100 { background-color: rgba(34, 197, 94, 0.25); }
+    html.dark .bg-yellow-100 { background-color: rgba(234, 179, 8, 0.25); }
+    html.dark .bg-teal-100 { background-color: rgba(20, 184, 166, 0.25); }
+    html.dark .bg-red-100 { background-color: rgba(239, 68, 68, 0.25); }
+    html.dark .border-red-200 { border-color: rgba(239, 68, 68, 0.5); }
+    html.dark .border-blue-300 { border-color: rgba(59, 130, 246, 0.5); }
+
+    /* Sync-all spinning icon */
+    @keyframes mr-spin { to { transform: rotate(360deg); } }
+    .mr-spin { animation: mr-spin 1s linear infinite; display: inline-block; }
+
+    /* Notification stack */
+    #mr-toasts {
+      position: fixed; bottom: 1rem; right: 1rem;
+      z-index: 9999;
+      display: flex; flex-direction: column; gap: 0.5rem;
+      align-items: flex-end;
+      pointer-events: none;
+    }
+    .mr-toast-item {
+      background: #1f2937; color: #f9fafb;
+      font-size: 0.875rem; padding: 0.5rem 1rem;
+      border-radius: 0.375rem; box-shadow: 0 2px 8px rgba(0,0,0,0.25);
+      display: flex; align-items: center; gap: 0.5rem;
+      animation: mr-toast-in 0.2s ease;
+      max-width: 24rem;
+    }
+    .mr-toast-success .mr-toast-icon { color: #4ade80; }
+    .mr-toast-error   .mr-toast-icon { color: #f87171; }
+    .mr-toast-out { animation: mr-toast-out 0.35s ease forwards; }
+    @keyframes mr-toast-in  { from { opacity:0; transform:translateX(8px); } to { opacity:1; transform:translateX(0); } }
+    @keyframes mr-toast-out { to   { opacity:0; transform:translateX(8px); } }
+  </style>
+</head>
+<body class="bg-gray-50 text-gray-900 min-h-screen">
+  <header class="bg-white shadow-sm">
+    <div class="max-w-5xl mx-auto px-4 py-3 flex items-center gap-6">
+      <a href="{{ url('/devices') }}" class="text-lg font-semibold hover:text-blue-600">{{ t.nav.brand }}</a>
+      <nav class="flex gap-4 text-sm">
+        <a href="{{ url('/devices') }}" class="text-gray-600 hover:text-blue-600">{{ t.nav.devices }}</a>
+        <a href="{{ url('/settings') }}" class="text-gray-600 hover:text-blue-600">{{ t.nav.settings }}</a>
+      </nav>
+    </div>
+  </header>
+  <main class="max-w-5xl mx-auto px-4 py-8">
+    {% block content %}{% endblock %}
+  </main>
+  <div id="mr-toasts" aria-live="polite"></div>
+  {% include "_modal.html" %}
+  <script src="{{ url('/static/modal.js') }}"></script>
+  <script src="{{ url('/static/notifications.js') }}"></script>
+  <script src="{{ url('/static/sync_all.js') }}"></script>
+</body>
+</html>

@@ -1,0 +1,1 @@
+"""HA Core integration package."""

@@ -1,0 +1,148 @@
+{% extends "base.html" %}
+{% block title %}{% if device %}{{ t.device.form.edit_title }}{% else %}{{ t.device.form.new_title }}{% endif %} - {{ t.nav.brand }}{% endblock %}
+{% block content %}
+
+{%- macro src_hint(source) -%}
+{%- if device and source and source.value not in ('generated', 'user') -%}
+<span class="ml-1 text-[10px] text-gray-400">({{ source.label }})</span>
+{%- endif -%}
+{%- endmacro -%}
+<div class="max-w-2xl">
+  <div class="flex items-center gap-3 mb-6">
+    <a href="{{ url('/devices') }}" class="text-gray-400 hover:text-gray-600 text-sm">← {{ t.nav.devices }}</a>
+    <h1 class="text-2xl font-bold">{% if device %}{{ t.device.form.edit_title }}{% else %}{{ t.device.form.new_title }}{% endif %}</h1>
+  </div>
+
+{% if not device %}
+  {# New-device flow: name + scan/manual tiles only. All other metadata
+     (vendor, product, room, status, transport, warranty, notes…) is filled
+     in afterwards on the device detail / edit page. #}
+  <form method="post" action="{{ url('/devices') }}" class="space-y-6">
+    <div class="bg-white rounded shadow p-6">
+      <label class="block text-sm font-medium text-gray-700 mb-1">{{ t.device.form.name_label }} <span class="text-red-500">*</span></label>
+      <input type="text" name="name" required autofocus
+             class="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+    </div>
+
+    <div>
+      <h2 class="text-lg font-semibold text-gray-700 mb-1">{{ t.device.form.scan_heading }} <span class="text-sm font-normal text-gray-400">{{ t.device.form.scan_optional }}</span></h2>
+      <p class="text-sm text-gray-500 mb-4">{{ t.device.form.scan_desc }}</p>
+      {% set scan_mode = "new" %}
+      {% include "devices/_scan_block.html" %}
+    </div>
+
+    <input type="hidden" name="qr_payload" id="new-device-qr-payload" value="">
+
+    <div class="flex gap-3 pt-2">
+      <button type="submit"
+              class="bg-blue-600 text-white px-5 py-2 rounded hover:bg-blue-700 text-sm font-medium">
+        {{ t.device.form.create_btn }}
+      </button>
+      <a href="{{ url('/devices') }}"
+         class="px-5 py-2 rounded border border-gray-300 text-sm hover:bg-gray-50">
+        {{ t.device.form.cancel }}
+      </a>
+    </div>
+  </form>
+{% else %}
+  <form method="post"
+        action="{{ url('/devices/' + device.id) }}"
+        class="bg-white rounded shadow p-6 space-y-4">
+
+    <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+      <div class="sm:col-span-2">
+        <label class="block text-sm font-medium text-gray-700 mb-1">{{ t.device.form.name_label }} <span class="text-red-500">*</span>{{ src_hint(device.name_source) }}</label>
+        <input type="text" name="name" required
+               value="{{ device.name }}"
+               class="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+      </div>
+
+      <div>
+        <label class="block text-sm font-medium text-gray-700 mb-1">{{ t.device.form.vendor_label }}{{ src_hint(device.vendor_source) }}</label>
+        <input type="text" name="vendor"
+               value="{{ device.vendor or '' }}"
+               class="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+      </div>
+
+      <div>
+        <label class="block text-sm font-medium text-gray-700 mb-1">{{ t.device.form.product_label }}{{ src_hint(device.product_source) }}</label>
+        <input type="text" name="product"
+               value="{{ device.product or '' }}"
+               class="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+      </div>
+
+      <div>
+        <label class="block text-sm font-medium text-gray-700 mb-1">{{ t.device.form.model_label }}{{ src_hint(device.device_model_source) }}</label>
+        <input type="text" name="device_model"
+               value="{{ device.device_model or '' }}"
+               class="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+      </div>
+
+      <div>
+        <label class="block text-sm font-medium text-gray-700 mb-1">{{ t.device.form.room_label }}{{ src_hint(device.room_source) }}</label>
+        <input type="text" name="room"
+               value="{{ device.room or '' }}"
+               class="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+      </div>
+
+      <div>
+        <label class="block text-sm font-medium text-gray-700 mb-1">{{ t.device.form.serial_label }}{{ src_hint(device.serial_source) }}</label>
+        <input type="text" name="serial"
+               value="{{ device.serial or '' }}"
+               class="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+      </div>
+
+      <div>
+        <label class="block text-sm font-medium text-gray-700 mb-1">{{ t.device.form.status_label }}</label>
+        <select name="status"
+                class="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+          {% for s in statuses %}
+          <option value="{{ s.value }}"
+                  {% if device.status == s %}selected{% endif %}>
+            {{ t.device.list['status_' ~ s.value] }}
+          </option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <div>
+        <label class="block text-sm font-medium text-gray-700 mb-1">{{ t.device.form.transport_label }}{{ src_hint(device.network_type_source) }}</label>
+        <div class="flex flex-wrap gap-x-4 gap-y-1 mt-1">
+          {% for nt in [('wifi','Wi-Fi'), ('thread','Thread'), ('ethernet','Ethernet'), ('bluetooth','Bluetooth')] %}
+          <label class="flex items-center gap-1.5 text-sm text-gray-700">
+            <input type="checkbox" name="network_type" value="{{ nt[0] }}"
+                   {% if nt[0] in (device.network_type or []) %}checked{% endif %}>
+            {{ nt[1] }}
+          </label>
+          {% endfor %}
+        </div>
+      </div>
+
+      <div>
+        <label class="block text-sm font-medium text-gray-700 mb-1">{{ t.device.form.warranty_label }}</label>
+        <input type="date" name="warranty_until"
+               value="{{ device.warranty_until.isoformat() if device.warranty_until else '' }}"
+               class="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+      </div>
+
+      <div class="sm:col-span-2">
+        <label class="block text-sm font-medium text-gray-700 mb-1">{{ t.device.form.notes_label }}</label>
+        <textarea name="notes" rows="4"
+                  class="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">{{ device.notes or '' }}</textarea>
+      </div>
+    </div>
+
+    <div class="flex gap-3 pt-2">
+      <button type="submit"
+              class="bg-blue-600 text-white px-5 py-2 rounded hover:bg-blue-700 text-sm font-medium">
+        {{ t.device.form.save_btn }}
+      </button>
+      <a href="{{ url('/devices/' + device.id) }}"
+         class="px-5 py-2 rounded border border-gray-300 text-sm hover:bg-gray-50">
+        {{ t.device.form.cancel }}
+      </a>
+    </div>
+  </form>
+{% endif %}
+</div>
+{% endblock %}

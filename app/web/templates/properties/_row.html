@@ -1,0 +1,21 @@
+<tr id="cred-row-{{ c.id }}">
+  <td class="px-3 py-2 font-mono text-xs text-gray-600">{{ c.type.value }}</td>
+  <td class="px-3 py-2">
+    <span class="font-mono text-xs break-all">{{ c.value }}</span>
+  </td>
+  <td class="px-3 py-2 text-gray-500 text-xs">{{ c.label or "-" }}</td>
+  <td class="px-3 py-2 text-gray-500 text-xs">{{ c.source.value }}</td>
+  <td class="px-3 py-2 text-right space-x-2">
+    <button
+      hx-get="{{ url('/devices/' + c.device_id + '/properties/' + c.id + '/edit') }}"
+      hx-target="#cred-row-{{ c.id }}"
+      hx-swap="outerHTML"
+      class="text-xs text-gray-400 hover:text-blue-600">{{ t.properties.edit_btn }}</button>
+    <button
+      hx-delete="{{ url('/devices/' + c.device_id + '/properties/' + c.id) }}"
+      hx-target="#property-list"
+      hx-swap="outerHTML"
+      hx-confirm="{{ t.properties.delete_confirm }}"
+      class="text-xs text-gray-400 hover:text-red-600">{{ t.properties.delete_btn }}</button>
+  </td>
+</tr>

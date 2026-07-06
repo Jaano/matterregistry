@@ -1,0 +1,31 @@
+<tr id="cred-row-{{ c.id }}">
+  <td class="px-3 py-2">
+    <select name="cred_type" class="border border-gray-300 rounded px-1 py-0.5 text-xs w-full">
+      {% for ptype in prop_types %}
+      <option value="{{ ptype.value }}"{% if ptype.value == c.type.value %} selected{% endif %}>{{ ptype.value }}</option>
+      {% endfor %}
+    </select>
+  </td>
+  <td class="px-3 py-2">
+    <input name="value" value="{{ c.value }}"
+           class="border border-gray-300 rounded px-1 py-0.5 text-xs w-full font-mono">
+  </td>
+  <td class="px-3 py-2">
+    <input name="label" value="{{ c.label or '' }}"
+           class="border border-gray-300 rounded px-1 py-0.5 text-xs w-full">
+  </td>
+  <td class="px-3 py-2 text-gray-500 text-xs">{{ c.source.value }}</td>
+  <td class="px-3 py-2 text-right space-x-2">
+    <button
+      hx-post="{{ url('/devices/' + c.device_id + '/properties/' + c.id) }}"
+      hx-include="closest tr"
+      hx-target="#cred-row-{{ c.id }}"
+      hx-swap="outerHTML"
+      class="text-xs text-blue-600 hover:text-blue-800 font-medium">{{ t.properties.save_btn }}</button>
+    <button type="button"
+      hx-get="{{ url('/devices/' + c.device_id + '/properties/' + c.id + '/row') }}"
+      hx-target="#cred-row-{{ c.id }}"
+      hx-swap="outerHTML"
+      class="text-xs text-gray-400 hover:text-gray-600">{{ t.properties.cancel_btn }}</button>
+  </td>
+</tr>

@@ -1,0 +1,17 @@
+# Allowlist: send only what the Dockerfile actually COPYs.
+# Anything not explicitly un-ignored below stays out of the build context.
+**
+
+!app/
+!migrations/
+!alembic.ini
+!pyproject.toml
+
+# Strip caches/compiled artifacts even from the allowlisted dirs
+**/__pycache__
+**/*.pyc
+**/*.pyo
+**/.pytest_cache
+**/.mypy_cache
+**/.ruff_cache
+**/.DS_Store
