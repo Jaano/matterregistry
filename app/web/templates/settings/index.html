@@ -85,6 +85,17 @@
     </select>
   </div>
 
+  <!-- Printing -->
+  <div class="bg-white rounded shadow p-5">
+    <h2 class="text-sm font-semibold text-gray-500 uppercase mb-3">{{ t.settings.printing.title }}</h2>
+    <label for="sticker-format-select" class="block text-sm text-gray-600 mb-2">{{ t.settings.printing.description }}</label>
+    <select id="sticker-format-select" data-sticker-picker onchange="mrSetStickerFormat(this.value)"
+            class="w-full border border-gray-300 rounded px-3 py-2 text-sm bg-white text-gray-700">
+      <option value="l7162">{{ t.settings.printing.format_l7162 }}</option>
+      <option value="avery5162">{{ t.settings.printing.format_avery5162 }}</option>
+    </select>
+  </div>
+
 </div>
 
 <!-- Backup & Restore -->

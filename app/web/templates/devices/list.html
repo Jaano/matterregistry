@@ -1,6 +1,43 @@
 {% extends "base.html" %}
 {% block title %}{{ t.device.list.title }} - {{ t.nav.brand }}{% endblock %}
 {% block content %}
+<style>
+.mr-sheet-grid { display: none; }
+@media print {
+  header, #mr-toasts, .no-print { display: none; }
+  main { max-width: none; margin: 0; padding: 0; }
+  main > *:not(.mr-sheet-grid) { display: none; }
+}
+</style>
+<style media="print" data-sticker-format="avery5162">
+  @page { size: letter portrait; margin: 21.17mm 3.97mm 6mm 3.97mm; }
+  .mr-sheet-grid {
+    display: grid;
+    grid-template-columns: 101.6mm 101.6mm;
+    grid-auto-rows: 33.87mm;
+    column-gap: 4.76mm;
+    row-gap: 0;
+    justify-content: start;
+    align-content: start;
+  }
+  .mr-tile { width: 101.6mm; height: 33.87mm; }
+  .mr-tile:nth-child(14n) { break-after: page; }
+</style>
+<style media="print" data-sticker-format="l7162">
+  @page { size: A4 portrait; margin: 13mm 4.4mm 6mm 4mm; }
+  .mr-sheet-grid {
+    display: grid;
+    grid-template-columns: 99.1mm 99.1mm;
+    grid-auto-rows: 33.9mm;
+    column-gap: 3.4mm;
+    row-gap: 0;
+    justify-content: start;
+    align-content: start;
+  }
+  .mr-tile { width: 99.1mm; height: 33.9mm; }
+  .mr-tile:nth-child(16n) { break-after: page; }
+</style>
+
 <div class="flex items-center justify-between mb-4">
   <h1 class="text-2xl font-bold">{{ t.device.list.title }}</h1>
   <div class="flex items-center gap-2">
@@ -8,6 +45,13 @@
        class="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 text-sm font-medium">
       {{ t.device.list.new_btn }}
     </a>
+    <button type="button" onclick="window.mrPrintQrSheet()"
+            {% if not qr_sheet_tiles %}disabled{% endif %}
+            title="{{ t.device.list.print_qr_sheet_title }}"
+            aria-label="{{ t.device.list.print_qr_sheet_btn }}"
+            class="bg-blue-600 text-white px-4 h-9 rounded hover:bg-blue-700 text-sm font-medium disabled:opacity-50 inline-flex items-center justify-center">
+      <span class="icon-printer" role="img" style="width:1.76em;height:1.76em"></span>
+    </button>
     <button type="button"
             onclick="syncAll()"
             id="sync-all-btn"
@@ -102,4 +146,41 @@
 </div>
 
 {% include "devices/_rows.html" %}
+
+{% if qr_sheet_tiles %}
+{% from "devices/_qr_sticker.html" import qr_sticker with context %}
+<div class="mr-sheet-grid">
+  {% for tile in qr_sheet_tiles %}
+  <div class="mr-tile" style="box-sizing: border-box; overflow: hidden; display: flex; align-items: center; padding: 0 2mm; break-inside: avoid; page-break-inside: avoid;">
+    {{ qr_sticker(tile.device, tile.manual_formatted, tile.is_homekit, lazy_qr=true,
+         mt_version=tile.mt_version, mt_flow_label=tile.mt_flow_label, mt_disc_label=tile.mt_disc_label,
+         hk_category=tile.hk_category, hk_setup_id=tile.hk_setup_id, hk_supports_ip=tile.hk_supports_ip,
+         hk_supports_ble=tile.hk_supports_ble, hk_paired=tile.hk_paired) }}
+  </div>
+  {% endfor %}
+</div>
+<script>
+window.mrPrintQrSheet = function () {
+  var imgs = Array.prototype.slice.call(
+    document.querySelectorAll('.mr-sheet-grid img[data-qr-src]'));
+  var pending = 0, fired = false;
+  function fire() { if (!fired) { fired = true; window.print(); } }
+  imgs.forEach(function (img) {
+    if (!img.getAttribute('src')) img.src = img.getAttribute('data-qr-src');
+    if (!img.complete) {
+      pending++;
+      var done = function () {
+        img.removeEventListener('load', done);
+        img.removeEventListener('error', done);
+        if (--pending === 0) fire();
+      };
+      img.addEventListener('load', done);
+      img.addEventListener('error', done);
+    }
+  });
+  if (pending === 0) fire();
+  else setTimeout(fire, 5000);
+};
+</script>
+{% endif %}
 {% endblock %}

@@ -10,7 +10,7 @@
 
 The Matter smart-home standard deliberately destroys commissioning secrets after first pairing - pairing PINs, QR codes, setup codes, and manual pairing codes are considered single-use. **Matter Registry fills that gap.** It stores and displays the out-of-band metadata for your Matter devices: pairing PINs, manual setup codes, QR payloads, install photos, purchase and warranty dates, firmware notes, and more.
 
-Matter Registry can regenerate the original QR code and 11-digit manual pairing code from a stored payload, so you can re-commission a device without hunting through packaging. A full-database JSON export can be restored on a fresh install - bringing every device, credential, and photo with it.
+Matter Registry can regenerate the original QR code and 11-digit manual pairing code from a stored payload, so you can re-commission a device without hunting through packaging. It also prints QR stickers - one device, or a full sheet of all of them - onto Avery L7162 (A4) or 5162 (US Letter) label stock, chosen under **Settings → Printing**. A full-database JSON export can be restored on a fresh install - bringing every device, credential, and photo with it.
 
 Access is intentionally unauthenticated at the application layer. The design goal is to be a private, LAN-local tool protected by your network and HA Ingress, not one that adds its own login screen to a home dashboard.
 

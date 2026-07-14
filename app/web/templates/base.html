@@ -79,6 +79,18 @@
     html.dark .border-red-200 { border-color: rgba(239, 68, 68, 0.5); }
     html.dark .border-blue-300 { border-color: rgba(59, 130, 246, 0.5); }
 
+    @media print {
+      html.dark, html.dark body { color-scheme: light !important; background-color: #ffffff !important; color: #111827 !important; }
+      html.dark .mr-sheet-grid, html.dark .mr-tile, html.dark .mr-print-sticker { background-color: #ffffff !important; }
+      html.dark .bg-white { background-color: #ffffff !important; }
+      html.dark .text-gray-900 { color: #111827 !important; }
+      html.dark .text-gray-800 { color: #1f2937 !important; }
+      html.dark .text-gray-700 { color: #374151 !important; }
+      html.dark .text-gray-600 { color: #4b5563 !important; }
+      html.dark .text-gray-500 { color: #6b7280 !important; }
+      html.dark .text-gray-400 { color: #9ca3af !important; }
+    }
+
     /* Sync-all spinning icon */
     @keyframes mr-spin { to { transform: rotate(360deg); } }
     .mr-spin { animation: mr-spin 1s linear infinite; display: inline-block; }

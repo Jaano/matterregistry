@@ -35,6 +35,8 @@ device:
     filtered_empty: "No devices match the current filters."
     clear_all_filters: "Clear all filters"
     matching: "matching filters"
+    print_qr_sheet_btn: "Print QR sheet"
+    print_qr_sheet_title: "Print QR stickers for every device with a stored code, including hidden ones"
 
   form:
     new_title: "New device"
@@ -88,6 +90,7 @@ device:
     field_custom_flow_url: "Custom flow URL"
     field_hk_category: "Category"
     field_hk_setup_id: "Setup ID"
+    field_hk_setup_id_short: "ID"
     field_hk_transports: "Pairing transports"
     hk_paired: "paired"
     field_mt_version: "MT format version"
@@ -257,6 +260,12 @@ settings:
     description: "Choose the display language."
     en: "English"
     et: "Estonian"
+
+  printing:
+    title: "Printing"
+    description: "Label sheet for QR sticker printing."
+    format_l7162: "L7162 - A4, 2×8 labels (99.1 × 33.9 mm)"
+    format_avery5162: "Avery 5162/8162 - US Letter, 2×7 labels (4 × 1⅓ in)"
 
   backup:
     title: "Backup & Restore"

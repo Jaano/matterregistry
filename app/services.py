@@ -7,6 +7,9 @@ from sqlmodel import Session, select
 
 from .audit import log as audit_log
 from .homekit import (
+    category_name as homekit_category_name,
+)
+from .homekit import (
     decode_payload as decode_homekit_payload,
 )
 from .homekit import (
@@ -215,6 +218,72 @@ def _apply_scan_homekit_manual_code(session: Session, device: Device, code: str)
     _upsert_credential(session, device.id, PropertyType.manual_code, formatted)
     device.protocol = DeviceProtocol.homekit
     session.add(device)
+
+
+def compute_onboarding_display(device: Device, properties: list[Property]) -> dict[str, Any]:
+    """Derive the onboarding fields the QR sticker (device detail print, bulk
+    QR sheet) and the on-screen Onboarding tile both need: QR payload
+    presence, formatted manual code, and decoded Matter/HomeKit metadata."""
+    qr_payload = next((c for c in properties if c.type == PropertyType.qr_payload), None)
+    pin_cred = next((c for c in properties if c.type == PropertyType.setup_pin), None)
+    disc_cred = next((c for c in properties if c.type == PropertyType.discriminator), None)
+    manual_formatted = None
+    manual_plain = None
+    is_homekit = device.protocol == DeviceProtocol.homekit if device.protocol else False
+    if pin_cred and disc_cred:
+        if is_homekit:
+            manual_formatted = format_homekit_manual_code(int(pin_cred.value))
+            manual_plain = str(int(pin_cred.value)).zfill(8)
+        else:
+            code = compute_manual_code(int(pin_cred.value), int(disc_cred.value))
+            manual_formatted = f"{code[:4]}-{code[4:7]}-{code[7:]}"
+            manual_plain = code
+    mt_version = mt_flow_label = mt_disc_label = None
+    hk_category = hk_setup_id = hk_paired = hk_supports_ip = hk_supports_ble = None
+    if qr_payload:
+        raw_payload = qr_payload.value
+        if raw_payload.upper().startswith("X-HM://"):
+            try:
+                hk_sp = decode_homekit_payload(raw_payload)
+                hk_category = homekit_category_name(hk_sp.category_id)
+                hk_setup_id = hk_sp.setup_id
+                hk_paired = hk_sp.paired
+                hk_supports_ip = hk_sp.supports_ip
+                hk_supports_ble = hk_sp.supports_ble
+            except Exception:
+                pass
+        elif raw_payload.upper().startswith("MT:"):
+            try:
+                mt_sp = decode_setup_payload(raw_payload)
+                mt_version = mt_sp.version
+                mt_flow_label = {0: "Standard", 1: "User Action Required", 2: "Custom"}.get(
+                    mt_sp.custom_flow, str(mt_sp.custom_flow)
+                )
+                caps = mt_sp.discovery_capabilities
+                parts = []
+                if caps & 0x01:
+                    parts.append("SoftAP")
+                if caps & 0x02:
+                    parts.append("BLE")
+                if caps & 0x04:
+                    parts.append("On Network")
+                mt_disc_label = ", ".join(parts) if parts else f"0x{caps:02X}"
+            except Exception:
+                pass
+    return {
+        "qr_payload": qr_payload,
+        "manual_formatted": manual_formatted,
+        "manual_plain": manual_plain,
+        "is_homekit": is_homekit,
+        "mt_version": mt_version,
+        "mt_flow_label": mt_flow_label,
+        "mt_disc_label": mt_disc_label,
+        "hk_category": hk_category,
+        "hk_setup_id": hk_setup_id,
+        "hk_paired": hk_paired,
+        "hk_supports_ip": hk_supports_ip,
+        "hk_supports_ble": hk_supports_ble,
+    }
 
 
 _MERGE_SCALAR_FIELDS = [

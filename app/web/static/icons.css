@@ -81,6 +81,24 @@
   vertical-align: middle;
 }
 
+.icon-printer {
+  display: inline-block;
+  width: 1.1em;
+  height: 1.1em;
+  /* Mask (like .icon-sync-circle) so the glyph follows `color` - white on the
+     blue Print-QR-sheet button. */
+  background-color: currentColor;
+  -webkit-mask-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><path fill='black' d='M18 3H6v4h12zm1 5H5a3 3 0 0 0-3 3v6h4v4h12v-4h4v-6a3 3 0 0 0-3-3m-3 11H8v-5h8zm3-7a1 1 0 1 1 0-2a1 1 0 0 1 0 2'/></svg>");
+  mask-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><path fill='black' d='M18 3H6v4h12zm1 5H5a3 3 0 0 0-3 3v6h4v4h12v-4h4v-6a3 3 0 0 0-3-3m-3 11H8v-5h8zm3-7a1 1 0 1 1 0-2a1 1 0 0 1 0 2'/></svg>");
+  -webkit-mask-size: contain;
+  mask-size: contain;
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  -webkit-mask-position: center;
+  mask-position: center;
+  vertical-align: middle;
+}
+
 .icon-protocol-matter {
   display: inline-block;
   width: 1.1em;

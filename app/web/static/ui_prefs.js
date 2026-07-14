@@ -1,6 +1,7 @@
 (function () {
-  var THEME_KEY = 'mr.ui.theme';
-  var LANG_KEY  = 'mr.ui.language';
+  var THEME_KEY   = 'mr.ui.theme';
+  var LANG_KEY    = 'mr.ui.language';
+  var STICKER_KEY = 'mr.ui.sticker_format';
   var media = window.matchMedia('(prefers-color-scheme: dark)');
 
   /* ── Theme ─────────────────────────────────────────────── */
@@ -37,12 +38,35 @@
     window.location.reload();
   };
 
-  /* ── DOMContentLoaded: sync pickers ────────────────────── */
+  /* ── QR sticker label format ───────────────────────────── */
+  /* The print dialog's paper choice can't be detected from CSS/JS, so the
+     label-sheet format is a stored preference. Pages that print stickers
+     carry one <style data-sticker-format="..."> block per format; exactly
+     the selected one stays enabled. */
+  function applyStickerFormat(value) {
+    var styles = document.querySelectorAll('style[data-sticker-format]');
+    for (var i = 0; i < styles.length; i++) {
+      styles[i].disabled = styles[i].getAttribute('data-sticker-format') !== value;
+    }
+  }
+
+  window.mrSetStickerFormat = function (value) {
+    localStorage.setItem(STICKER_KEY, value);
+    applyStickerFormat(value);
+    var picker = document.querySelector('[data-sticker-picker]');
+    if (picker && picker.value !== value) picker.value = value;
+  };
+
+  /* ── DOMContentLoaded: sync pickers, apply body-level prefs ── */
   document.addEventListener('DOMContentLoaded', function () {
     var themePicker = document.querySelector('[data-theme-picker]');
     if (themePicker) themePicker.value = localStorage.getItem(THEME_KEY) || 'system';
 
     var langPicker = document.querySelector('[data-lang-picker]');
     if (langPicker) langPicker.value = localStorage.getItem(LANG_KEY) || 'en';
+
+    applyStickerFormat(localStorage.getItem(STICKER_KEY) || 'l7162');
+    var stickerPicker = document.querySelector('[data-sticker-picker]');
+    if (stickerPicker) stickerPicker.value = localStorage.getItem(STICKER_KEY) || 'l7162';
   });
 })();

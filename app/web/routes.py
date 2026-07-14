@@ -120,6 +120,26 @@ def device_list(
     from ..integrations.otbr.client import OTBRClient
 
     is_htmx = request.headers.get("HX-Request") == "true"
+
+    # A.2: bulk QR sticker sheet, printed in place from this page. Only the
+    # full-page render needs it (HTMX filter swaps replace just the table, not
+    # the hidden print grid), so skip the work on partial requests. The sheet
+    # deliberately covers *every* device with a stored QR code - including
+    # `hidden`, which the on-screen list filters out by default - since it is a
+    # complete physical reference, not a view of the current filters. Devices
+    # with no stored QR payload are skipped (nothing to print for them).
+    qr_sheet_tiles: list[dict] = []
+    if not is_htmx:
+        from ..services import compute_onboarding_display
+
+        props_by_device: dict[str, list[Property]] = {}
+        for _p in session.exec(select(Property)).all():
+            props_by_device.setdefault(_p.device_id, []).append(_p)
+        for _d in sorted(all_devices, key=lambda d: (d.name or "").lower()):
+            _onb = compute_onboarding_display(_d, props_by_device.get(_d.id, []))
+            if _onb["qr_payload"]:
+                qr_sheet_tiles.append({"device": _d, **_onb})
+
     ctx = _ctx(
         request,
         devices=devices,
@@ -132,6 +152,7 @@ def device_list(
         active_room=room,
         any_filter=bool(q or status or vendor or room),
         any_integration_configured=any_integration_configured,
+        qr_sheet_tiles=qr_sheet_tiles,
         ms_long_name=MatterServerClient.long_name,
         otbr_long_name=OTBRClient.long_name,
         ha_long_name=HACoreClient.long_name,
@@ -296,65 +317,26 @@ def device_scan_post(
 
 @router.get("/devices/{id}", response_class=HTMLResponse)
 def device_detail(id: str, request: Request, session: Session = Depends(get_session)):
+    from ..services import compute_onboarding_display
+
     device = session.get(Device, id)
     if not device:
         return HTMLResponse("Device not found", status_code=404)
     properties = session.exec(select(Property).where(Property.device_id == id)).all()
     attachments = session.exec(select(Attachment).where(Attachment.device_id == id)).all()
-    qr_payload = next((c for c in properties if c.type == PropertyType.qr_payload), None)
-    pin_cred = next((c for c in properties if c.type == PropertyType.setup_pin), None)
-    disc_cred = next((c for c in properties if c.type == PropertyType.discriminator), None)
-    manual_formatted = None
-    manual_plain = None
-    is_homekit = device.protocol.value == "homekit" if device.protocol else False
-    if pin_cred and disc_cred:
-        if is_homekit:
-            from ..homekit import format_manual_code
-
-            manual_formatted = format_manual_code(int(pin_cred.value))
-            manual_plain = str(int(pin_cred.value)).zfill(8)
-        else:
-            from ..matter import compute_manual_code
-
-            code = compute_manual_code(int(pin_cred.value), int(disc_cred.value))
-            manual_formatted = f"{code[:4]}-{code[4:7]}-{code[7:]}"
-            manual_plain = code
-    mt_version = mt_flow_label = mt_disc_label = None
-    hk_category = hk_setup_id = hk_paired = hk_supports_ip = hk_supports_ble = None
-    if qr_payload:
-        raw_payload = qr_payload.value
-        if raw_payload.upper().startswith("X-HM://"):
-            try:
-                from ..homekit import category_name, decode_payload
-
-                hk_sp = decode_payload(raw_payload)
-                hk_category = category_name(hk_sp.category_id)
-                hk_setup_id = hk_sp.setup_id
-                hk_paired = hk_sp.paired
-                hk_supports_ip = hk_sp.supports_ip
-                hk_supports_ble = hk_sp.supports_ble
-            except Exception:
-                pass
-        elif raw_payload.upper().startswith("MT:"):
-            try:
-                from ..matter import decode_setup_payload
-
-                mt_sp = decode_setup_payload(raw_payload)
-                mt_version = mt_sp.version
-                mt_flow_label = {0: "Standard", 1: "User Action Required", 2: "Custom"}.get(
-                    mt_sp.custom_flow, str(mt_sp.custom_flow)
-                )
-                caps = mt_sp.discovery_capabilities
-                parts = []
-                if caps & 0x01:
-                    parts.append("SoftAP")
-                if caps & 0x02:
-                    parts.append("BLE")
-                if caps & 0x04:
-                    parts.append("On Network")
-                mt_disc_label = ", ".join(parts) if parts else f"0x{caps:02X}"
-            except Exception:
-                pass
+    onboarding = compute_onboarding_display(device, list(properties))
+    qr_payload = onboarding["qr_payload"]
+    manual_formatted = onboarding["manual_formatted"]
+    manual_plain = onboarding["manual_plain"]
+    is_homekit = onboarding["is_homekit"]
+    mt_version = onboarding["mt_version"]
+    mt_flow_label = onboarding["mt_flow_label"]
+    mt_disc_label = onboarding["mt_disc_label"]
+    hk_category = onboarding["hk_category"]
+    hk_setup_id = onboarding["hk_setup_id"]
+    hk_paired = onboarding["hk_paired"]
+    hk_supports_ip = onboarding["hk_supports_ip"]
+    hk_supports_ble = onboarding["hk_supports_ble"]
 
     # Matter Server live state
     matter_membership = session.exec(

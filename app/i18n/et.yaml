@@ -35,6 +35,8 @@ device:
     filtered_empty: "Ükski seade ei vasta praegustele filtritele."
     clear_all_filters: "Tühista kõik filtrid"
     matching: "vastavad filtritele"
+    print_qr_sheet_btn: "Prindi QR-leht"
+    print_qr_sheet_title: "Prindi QR-kleebised kõigile salvestatud koodiga seadmetele, sealhulgas peidetutele"
 
   form:
     new_title: "Uus seade"
@@ -88,6 +90,7 @@ device:
     field_custom_flow_url: "Kohandatud voo URL"
     field_hk_category: "Kategooria"
     field_hk_setup_id: "Seadistuse ID"
+    field_hk_setup_id_short: "ID"
     field_hk_transports: "Sidumistranspordid"
     hk_paired: "seotud"
     field_mt_version: "MT vormingu versioon"
@@ -257,6 +260,12 @@ settings:
     description: "Valige kuvatav keel."
     en: "English"
     et: "Eesti"
+
+  printing:
+    title: "Printimine"
+    description: "Etiketileht QR-kleebiste printimiseks."
+    format_l7162: "L7162 - A4, 2×8 etiketti (99,1 × 33,9 mm)"
+    format_avery5162: "Avery 5162/8162 - US Letter, 2×7 etiketti (4 × 1⅓ tolli)"
 
   backup:
     title: "Varundamine ja taastamine"
