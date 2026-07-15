@@ -1,0 +1,40 @@
+name: Feature request
+description: Suggest something Matter Registry doesn't do yet.
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the suggestion. Describing the problem you're hitting (not just the fix you have in mind) makes it easier to find the best solution.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: What are you trying to do?
+      description: What's currently hard, impossible, or annoying?
+    validations:
+      required: true
+
+  - type: textarea
+    id: solution
+    attributes:
+      label: Proposed solution
+      description: What would you like to see happen?
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Any workarounds you're using today, or other approaches you thought about.
+    validations:
+      required: false
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context
+      description: Screenshots, related devices/integrations, links to relevant Matter/HomeKit/HA docs, etc.
+    validations:
+      required: false
