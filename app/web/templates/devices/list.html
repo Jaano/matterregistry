@@ -166,7 +166,10 @@ window.mrPrintQrSheet = function () {
   var pending = 0, fired = false;
   function fire() { if (!fired) { fired = true; window.print(); } }
   imgs.forEach(function (img) {
-    if (!img.getAttribute('src')) img.src = img.getAttribute('data-qr-src');
+    if (!img.getAttribute('src')) {
+      var resolved = new URL(img.getAttribute('data-qr-src'), document.baseURI);
+      if (resolved.origin === window.location.origin) img.src = resolved.href;
+    }
     if (!img.complete) {
       pending++;
       var done = function () {

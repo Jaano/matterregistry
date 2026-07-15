@@ -282,6 +282,7 @@ settings:
     confirm_btn: "Jah, asenda kõik andmed"
     preview_failed: "Eelvaade ebaõnnestus"
     preview_error: "Eelvaadet ei õnnestunud laadida."
+    parse_failed: "Üleslaaditud faili ei õnnestunud JSON-ina lugeda."
     db_contains: "Praegune andmebaas sisaldab:"
     db_empty: "Praegune andmebaas on tühi."
     unit_devices: "seadet"

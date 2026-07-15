@@ -282,6 +282,7 @@ settings:
     confirm_btn: "Yes, replace all data"
     preview_failed: "Preview failed"
     preview_error: "Could not load preview."
+    parse_failed: "The uploaded file could not be read as JSON."
     db_contains: "Current database contains:"
     db_empty: "Current database is empty."
     unit_devices: "device(s)"

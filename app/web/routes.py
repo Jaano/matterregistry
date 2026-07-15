@@ -1,3 +1,4 @@
+import logging
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -8,7 +9,7 @@ from sqlmodel import Session, col, or_, select
 
 from ..audit import log as audit_log
 from ..database import get_session
-from ..i18n import get_t, resolve_lang
+from ..i18n import T, get_t, resolve_lang
 from ..models import (
     Attachment,
     Device,
@@ -26,12 +27,23 @@ from ..settings import settings as app_settings
 _TEMPLATES_DIR = Path(__file__).parent / "templates"
 templates = Jinja2Templates(directory=str(_TEMPLATES_DIR))
 
+logger = logging.getLogger(__name__)
+
 router = APIRouter()
 
 
 def _url(request: Request, path: str) -> str:
     prefix = getattr(request.state, "ingress_path", "").rstrip("/")
     return prefix + "/" + path.lstrip("/")
+
+
+def _t(request: Request) -> T:
+    return get_t(
+        resolve_lang(
+            request.cookies.get("mr_lang", ""),
+            request.headers.get("accept-language", ""),
+        )
+    )
 
 
 def _ctx(request: Request, **kwargs) -> dict:
@@ -867,8 +879,11 @@ async def settings_import_preview(
     try:
         content = await file.read()
         payload = json.loads(content)
-    except Exception as exc:
-        return JSONResponse({"error": str(exc)}, status_code=400)
+    except Exception:
+        logger.warning("Import preview: could not parse uploaded file", exc_info=True)
+        return JSONResponse(
+            {"error": str(_t(request).settings.backup.parse_failed)}, status_code=400
+        )
     plan = plan_import(session, payload, policy=policy)
     if plan.errors:
         return JSONResponse({"error": plan.errors[0]}, status_code=422)
@@ -901,11 +916,12 @@ async def settings_import(
     try:
         content = await file.read()
         payload = json.loads(content)
-    except Exception as exc:
+    except Exception:
+        logger.warning("Import: could not parse uploaded file", exc_info=True)
         return templates.TemplateResponse(
             request,
             "settings/index.html",
-            _ctx(request, import_error=f"Could not parse file: {exc}"),
+            _ctx(request, import_error=str(_t(request).settings.backup.parse_failed)),
             status_code=400,
         )
     plan = apply_import(session, payload, policy=policy)
