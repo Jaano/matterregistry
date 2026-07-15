@@ -1,21 +1,23 @@
-<tr id="cred-row-{{ c.id }}">
-  <td class="px-3 py-2">
+<tr id="cred-row-{{ c.id }}" class="block sm:table-row py-2 sm:py-0">
+  <td class="block sm:table-cell px-3 py-0.5 sm:py-2">
     <select name="cred_type" class="border border-gray-300 rounded px-1 py-0.5 text-xs w-full">
       {% for ptype in prop_types %}
       <option value="{{ ptype.value }}"{% if ptype.value == c.type.value %} selected{% endif %}>{{ ptype.value }}</option>
       {% endfor %}
     </select>
   </td>
-  <td class="px-3 py-2">
+  <td class="block sm:table-cell px-3 py-0.5 sm:py-2">
     <input name="value" value="{{ c.value }}"
            class="border border-gray-300 rounded px-1 py-0.5 text-xs w-full font-mono">
   </td>
-  <td class="px-3 py-2">
+  <td class="block sm:table-cell px-3 py-0.5 sm:py-2">
     <input name="label" value="{{ c.label or '' }}"
            class="border border-gray-300 rounded px-1 py-0.5 text-xs w-full">
   </td>
-  <td class="px-3 py-2 text-gray-500 text-xs">{{ c.source.value }}</td>
-  <td class="px-3 py-2 text-right space-x-2">
+  <td class="block sm:table-cell px-3 py-0.5 sm:py-2 text-gray-500 text-xs">
+    <span class="sm:hidden text-gray-400">{{ t.properties.col_source }}: </span>{{ c.source.value }}
+  </td>
+  <td class="block sm:table-cell px-3 py-1 sm:py-2 text-left sm:text-right space-x-2">
     <button
       hx-post="{{ url('/devices/' + c.device_id + '/properties/' + c.id) }}"
       hx-include="closest tr"

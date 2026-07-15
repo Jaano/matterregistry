@@ -1,11 +1,15 @@
-<tr id="cred-row-{{ c.id }}">
-  <td class="px-3 py-2 font-mono text-xs text-gray-600">{{ c.type.value }}</td>
-  <td class="px-3 py-2">
+<tr id="cred-row-{{ c.id }}" class="block sm:table-row py-2 sm:py-0">
+  <td class="block sm:table-cell px-3 py-0.5 sm:py-2 font-mono text-xs font-semibold sm:font-normal text-gray-700 sm:text-gray-600">{{ c.type.value }}</td>
+  <td class="block sm:table-cell px-3 py-0.5 sm:py-2">
     <span class="font-mono text-xs break-all">{{ c.value }}</span>
   </td>
-  <td class="px-3 py-2 text-gray-500 text-xs">{{ c.label or "-" }}</td>
-  <td class="px-3 py-2 text-gray-500 text-xs">{{ c.source.value }}</td>
-  <td class="px-3 py-2 text-right space-x-2">
+  <td class="block sm:table-cell px-3 py-0.5 sm:py-2 text-gray-500 text-xs">
+    <span class="sm:hidden text-gray-400">{{ t.properties.col_label }}: </span>{{ c.label or "-" }}
+  </td>
+  <td class="block sm:table-cell px-3 py-0.5 sm:py-2 text-gray-500 text-xs">
+    <span class="sm:hidden text-gray-400">{{ t.properties.col_source }}: </span>{{ c.source.value }}
+  </td>
+  <td class="block sm:table-cell px-3 py-1 sm:py-2 text-left sm:text-right space-x-2">
     <button
       hx-get="{{ url('/devices/' + c.device_id + '/properties/' + c.id + '/edit') }}"
       hx-target="#cred-row-{{ c.id }}"

@@ -2,9 +2,7 @@
 
 > A self-hosted registry for the metadata Matter discards.
 
-![Devices list](docs/screenshots/devices.png)
-
-![Device detail](docs/screenshots/detail.png)
+![The Matter Registry device list](docs/screenshots/devices.png)
 
 ## What it does
 
@@ -13,6 +11,18 @@ The Matter smart-home standard deliberately destroys commissioning secrets after
 Matter Registry can regenerate the original QR code and 11-digit manual pairing code from a stored payload, so you can re-commission a device without hunting through packaging. It also prints QR stickers - one device, or a full sheet of all of them - onto Avery L7162 (A4) or 5162 (US Letter) label stock, chosen under **Settings → Printing**. A full-database JSON export can be restored on a fresh install - bringing every device, credential, and photo with it.
 
 Access is intentionally unauthenticated at the application layer. The design goal is to be a private, LAN-local tool protected by your network and HA Ingress, not one that adds its own login screen to a home dashboard.
+
+
+<table>
+  <tr>
+    <td width="50%"><img src="docs/screenshots/detail.png" alt="Device detail page"><br><sub><b>Device detail</b> - identity, the onboarding QR + 11-digit pairing code regenerated from the stored payload, install photos, and every stored property.</sub></td>
+    <td width="50%"><img src="docs/screenshots/qr-sheet.png" alt="Printable QR sticker sheet"><br><sub><b>QR sticker sheet</b> - a printable sheet of per-device stickers laid out for Avery label stock.</sub></td>
+  </tr>
+  <tr>
+    <td width="50%"><img src="docs/screenshots/new-device.png" alt="Add a device"><br><sub><b>Add a device</b> - scan a QR code with the camera or type a setup code by hand.</sub></td>
+    <td width="50%"><img src="docs/screenshots/settings.png" alt="Settings page"><br><sub><b>Settings</b> - theme, language, print label format, and full-database backup / restore.</sub></td>
+  </tr>
+</table>
 
 ## Install - Home Assistant App
 

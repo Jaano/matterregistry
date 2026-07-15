@@ -1,7 +1,7 @@
 <div id="property-list">
 {% if properties %}
-<table class="min-w-full text-sm">
-  <thead class="bg-gray-50 text-gray-500 text-xs uppercase">
+<table class="min-w-full text-sm block sm:table">
+  <thead class="hidden sm:table-header-group bg-gray-50 text-gray-500 text-xs uppercase">
     <tr>
       <th class="px-3 py-2 text-left">{{ t.properties.col_type }}</th>
       <th class="px-3 py-2 text-left">{{ t.properties.col_value }}</th>
@@ -10,7 +10,7 @@
       <th class="px-3 py-2 text-left"></th>
     </tr>
   </thead>
-  <tbody class="divide-y divide-gray-100">
+  <tbody class="block sm:table-row-group divide-y divide-gray-100">
     {% for c in properties %}
     {% include "properties/_row.html" %}
     {% endfor %}

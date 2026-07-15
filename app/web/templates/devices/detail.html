@@ -54,7 +54,7 @@ html.dark #qr-svg img { filter: invert(1); }
 {%- if ico %}<span class="{{ ico }} ml-1 text-gray-400" role="img" aria-label="{{ lbl }}" title="{{ lbl }}"></span>{%- endif -%}
 {%- endmacro -%}
 
-<div class="flex items-start justify-between mb-6 no-print">
+<div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-0 mb-6 no-print">
   <div>
     <a href="{{ url('/devices') }}" class="text-gray-400 hover:text-gray-600 text-sm">← {{ t.nav.devices }}</a>
     <h1 class="text-2xl font-bold mt-1">{{ device.name }}</h1>
@@ -66,17 +66,17 @@ html.dark #qr-svg img { filter: invert(1); }
       {{ t.device.list['status_' ~ device.status.value] }}
     </span>
   </div>
-  <div class="flex gap-2 mt-1">
+  <div class="grid grid-cols-2 gap-2 sm:flex sm:gap-2 sm:mt-1">
     <a href="{{ url('/devices/' + device.id + '/scan') }}"
-       class="border border-blue-300 text-blue-700 px-3 py-1.5 rounded text-sm hover:bg-blue-50">{{ t.device.detail.scan_btn }}</a>
+       class="border border-blue-300 text-blue-700 px-3 py-1.5 rounded text-sm hover:bg-blue-50 text-center">{{ t.device.detail.scan_btn }}</a>
     <a href="{{ url('/devices/' + device.id + '/edit') }}"
-       class="border border-gray-300 px-3 py-1.5 rounded text-sm hover:bg-gray-50">{{ t.device.detail.edit_btn }}</a>
+       class="border border-gray-300 px-3 py-1.5 rounded text-sm hover:bg-gray-50 text-center">{{ t.device.detail.edit_btn }}</a>
     <a href="{{ url('/devices/' + device.id + '/merge') }}"
-       class="border border-gray-300 px-3 py-1.5 rounded text-sm hover:bg-gray-50">{{ t.device.detail.merge_btn }}</a>
+       class="border border-gray-300 px-3 py-1.5 rounded text-sm hover:bg-gray-50 text-center">{{ t.device.detail.merge_btn }}</a>
     <button
       hx-delete="{{ url('/devices/' + device.id) }}"
       hx-confirm="{{ t.device.detail.delete_confirm | replace('{name}', device.name) }}"
-      class="border border-red-200 text-red-600 px-3 py-1.5 rounded text-sm hover:bg-red-50">
+      class="border border-red-200 text-red-600 px-3 py-1.5 rounded text-sm hover:bg-red-50 text-center">
       {{ t.device.detail.delete_btn }}
     </button>
   </div>

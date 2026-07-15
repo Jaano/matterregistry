@@ -1,10 +1,53 @@
 <div id="device-rows">
 {% if devices %}
-<div class="bg-white rounded shadow overflow-x-auto">
+
+{% macro status_pill(d) %}
+<span class="px-2 py-0.5 rounded text-xs font-medium
+  {% if d.status.value == 'active' %}bg-green-100 text-green-700
+  {% elif d.status.value == 'retired' %}bg-gray-100 text-gray-500
+  {% elif d.status.value == 'hidden' %}bg-gray-100 text-gray-400 line-through
+  {% else %}bg-yellow-100 text-yellow-700{% endif %}">
+  {{ t.device.list['status_' ~ d.status.value] }}
+</span>
+{% endmacro %}
+
+{% macro comms_icons(d) %}
+{% set comms = device_comms[d.id] %}
+<span class="icon-comms text-gray-600 dark:text-gray-300">
+  {% if d.protocol and d.protocol.icon %}<span class="{{ d.protocol.icon }}" role="img" aria-label="{{ d.protocol.label }}" title="{{ d.protocol.label }} commissioning"></span>{% endif %}
+  {% if 'wifi' in (d.network_type or []) %}<span class="icon-wifi" role="img" aria-label="Wi-Fi" title="Wi-Fi"></span>{% endif %}
+  {% if 'thread' in (d.network_type or []) %}<span class="icon-thread" role="img" aria-label="Thread" title="Thread"></span>{% endif %}
+  {% if 'ethernet' in (d.network_type or []) %}<span class="icon-ethernet" role="img" aria-label="Ethernet" title="Ethernet"></span>{% endif %}
+  {% if 'bluetooth' in (d.network_type or []) %}<span class="icon-bluetooth" role="img" aria-label="Bluetooth" title="Bluetooth"></span>{% endif %}
+  {% if comms.has_onboarding %}<span class="icon-qr-code" role="img" aria-label="Onboarding info stored" title="Onboarding info stored"></span>{% endif %}
+</span>
+{% endmacro %}
+
+<div class="bg-white rounded shadow overflow-hidden">
   <div class="px-4 py-2 text-xs text-gray-400 border-b border-gray-100">
     {{ devices | length }} {{ t.device.list.col_name | lower }}{{ 's' if devices | length != 1 else '' }}
     {% if any_filter %} {{ t.device.list.matching }}{% endif %}
   </div>
+
+  <div class="sm:hidden divide-y divide-gray-100">
+    {% for d in devices %}
+    <a href="{{ url('/devices/' + d.id) }}" class="block px-4 py-3 hover:bg-gray-50">
+      <div class="flex items-start justify-between gap-2">
+        <span class="font-medium text-blue-600">{{ d.name }}</span>
+        {{ status_pill(d) }}
+      </div>
+      <div class="mt-1 text-xs text-gray-600">
+        {{ d.vendor or "-" }}{% if d.product %} &middot; {{ d.product }}{% endif %}
+      </div>
+      <div class="mt-1.5 flex items-center justify-between">
+        <span class="text-xs text-gray-500">{{ d.room or "-" }}</span>
+        {{ comms_icons(d) }}
+      </div>
+    </a>
+    {% endfor %}
+  </div>
+
+  <div class="hidden sm:block overflow-x-auto">
   <table class="min-w-full text-sm">
     <thead class="bg-gray-100 text-gray-600 uppercase text-xs">
       <tr>
@@ -25,30 +68,13 @@
         <td class="px-4 py-3 text-gray-600">{{ d.vendor or "-" }}</td>
         <td class="px-4 py-3 text-gray-600">{{ d.product or "-" }}</td>
         <td class="px-4 py-3 text-gray-600">{{ d.room or "-" }}</td>
-        <td class="px-4 py-3">
-          {% set comms = device_comms[d.id] %}
-          <span class="icon-comms text-gray-600 dark:text-gray-300">
-            {% if d.protocol and d.protocol.icon %}<span class="{{ d.protocol.icon }}" role="img" aria-label="{{ d.protocol.label }}" title="{{ d.protocol.label }} commissioning"></span>{% endif %}
-            {% if 'wifi' in (d.network_type or []) %}<span class="icon-wifi" role="img" aria-label="Wi-Fi" title="Wi-Fi"></span>{% endif %}
-            {% if 'thread' in (d.network_type or []) %}<span class="icon-thread" role="img" aria-label="Thread" title="Thread"></span>{% endif %}
-            {% if 'ethernet' in (d.network_type or []) %}<span class="icon-ethernet" role="img" aria-label="Ethernet" title="Ethernet"></span>{% endif %}
-            {% if 'bluetooth' in (d.network_type or []) %}<span class="icon-bluetooth" role="img" aria-label="Bluetooth" title="Bluetooth"></span>{% endif %}
-            {% if comms.has_onboarding %}<span class="icon-qr-code" role="img" aria-label="Onboarding info stored" title="Onboarding info stored"></span>{% endif %}
-          </span>
-        </td>
-        <td class="px-4 py-3">
-          <span class="px-2 py-0.5 rounded text-xs font-medium
-            {% if d.status.value == 'active' %}bg-green-100 text-green-700
-            {% elif d.status.value == 'retired' %}bg-gray-100 text-gray-500
-            {% elif d.status.value == 'hidden' %}bg-gray-100 text-gray-400 line-through
-            {% else %}bg-yellow-100 text-yellow-700{% endif %}">
-            {{ t.device.list['status_' ~ d.status.value] }}
-          </span>
-        </td>
+        <td class="px-4 py-3">{{ comms_icons(d) }}</td>
+        <td class="px-4 py-3">{{ status_pill(d) }}</td>
       </tr>
       {% endfor %}
     </tbody>
   </table>
+  </div>
 </div>
 {% else %}
 <div class="text-center py-16 text-gray-400">
