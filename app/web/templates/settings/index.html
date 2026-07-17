@@ -80,19 +80,19 @@
     <label for="lang-select" class="block text-sm text-gray-600 mb-2">{{ t.settings.language.description }}</label>
     <select id="lang-select" data-lang-picker onchange="mrSetLanguage(this.value)"
             class="w-full border border-gray-300 rounded px-3 py-2 text-sm bg-white text-gray-700">
-      <option value="en">{{ t.settings.language.en }}</option>
-      <option value="et">{{ t.settings.language.et }}</option>
-      <option value="de">{{ t.settings.language.de }}</option>
-      <option value="es">{{ t.settings.language.es }}</option>
-      <option value="fr">{{ t.settings.language.fr }}</option>
-      <option value="zh">{{ t.settings.language.zh }}</option>
-      <option value="fi">{{ t.settings.language.fi }}</option>
-      <option value="ja">{{ t.settings.language.ja }}</option>
-      <option value="pt">{{ t.settings.language.pt }}</option>
-      <option value="hi">{{ t.settings.language.hi }}</option>
-      <option value="uk">{{ t.settings.language.uk }}</option>
-      <option value="pl">{{ t.settings.language.pl }}</option>
-      <option value="it">{{ t.settings.language.it }}</option>
+      <option value="en" {% if lang == 'en' %}selected{% endif %}>{{ t.settings.language.en }}</option>
+      <option value="et" {% if lang == 'et' %}selected{% endif %}>{{ t.settings.language.et }}</option>
+      <option value="de" {% if lang == 'de' %}selected{% endif %}>{{ t.settings.language.de }}</option>
+      <option value="es" {% if lang == 'es' %}selected{% endif %}>{{ t.settings.language.es }}</option>
+      <option value="fr" {% if lang == 'fr' %}selected{% endif %}>{{ t.settings.language.fr }}</option>
+      <option value="zh" {% if lang == 'zh' %}selected{% endif %}>{{ t.settings.language.zh }}</option>
+      <option value="fi" {% if lang == 'fi' %}selected{% endif %}>{{ t.settings.language.fi }}</option>
+      <option value="ja" {% if lang == 'ja' %}selected{% endif %}>{{ t.settings.language.ja }}</option>
+      <option value="pt" {% if lang == 'pt' %}selected{% endif %}>{{ t.settings.language.pt }}</option>
+      <option value="hi" {% if lang == 'hi' %}selected{% endif %}>{{ t.settings.language.hi }}</option>
+      <option value="uk" {% if lang == 'uk' %}selected{% endif %}>{{ t.settings.language.uk }}</option>
+      <option value="pl" {% if lang == 'pl' %}selected{% endif %}>{{ t.settings.language.pl }}</option>
+      <option value="it" {% if lang == 'it' %}selected{% endif %}>{{ t.settings.language.it }}</option>
     </select>
   </div>
 

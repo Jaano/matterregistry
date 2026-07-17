@@ -6,11 +6,11 @@
 
 ## What it does
 
-The Matter smart-home standard deliberately destroys commissioning secrets after first pairing - pairing PINs, QR codes, setup codes, and manual pairing codes are considered single-use. **Matter Registry fills that gap.** It stores and displays the out-of-band metadata for your Matter devices: pairing PINs, manual setup codes, QR payloads, install photos, purchase and warranty dates, firmware notes, and more.
+Matter commissioning tools usually discard setup secrets after the first pairing. That is a problem when you need to pair a device again and the box is long gone. Matter Registry keeps the pairing PIN, setup codes, original QR payload, photos, purchase details, warranty dates, firmware notes, and anything else you want to remember about the device.
 
-Matter Registry can regenerate the original QR code and 11-digit manual pairing code from a stored payload, so you can re-commission a device without hunting through packaging. It also prints QR stickers - one device, or a full sheet of all of them - onto Avery L7162 (A4) or 5162 (US Letter) label stock, chosen under **Settings → Printing**. A full-database JSON export can be restored on a fresh install - bringing every device, credential, and photo with it.
+From a stored payload, Matter Registry can recreate the QR code and 11-digit manual pairing code. It can also print a sticker for one device or a full sheet on Avery L7162 (A4) or 5162 (US Letter) label stock. Choose the label format under **Settings → Printing**. You can restore a JSON backup on a fresh installation without losing devices, credentials, or photos.
 
-Access is intentionally unauthenticated at the application layer. The design goal is to be a private, LAN-local tool protected by your network and HA Ingress, not one that adds its own login screen to a home dashboard.
+The application has no login screen. It is meant to stay on a private LAN, with access controlled by your network or Home Assistant Ingress.
 
 
 <table>
@@ -24,18 +24,18 @@ Access is intentionally unauthenticated at the application layer. The design goa
   </tr>
 </table>
 
-## Install - Home Assistant App
+## Install as a Home Assistant App
 
 1. Open Home Assistant → **Settings → Add-ons → ⋮ (overflow menu) → Repositories**.
 2. Add the store URL: `https://github.com/Jaano/matterregistry`
 3. Refresh the store list, find **Matter Registry**, and click **Install**.
 4. Start the App, then click **Open Web UI**.
 
-The App runs behind HA Ingress - no port forwarding or reverse proxy required. All URLs are ingress-aware.
+Home Assistant opens the App through Ingress, so you do not need port forwarding or a reverse proxy. Links continue to work under the Ingress URL.
 
-## Install - standalone Docker
+## Install with Docker
 
-Pull and run with Docker Compose. Create a `docker-compose.yml`:
+Create a `docker-compose.yml`:
 
 ```yaml
 services:
@@ -57,21 +57,22 @@ Then:
 docker compose pull && docker compose up -d
 ```
 
-Open `http://localhost:5591`. All data is in `./data/matterregistry.db` (a single SQLite file).
+Open `http://localhost:5591`. Matter Registry keeps all of its data in one SQLite file at `./data/matterregistry.db`.
 
-> **In-browser QR scanning requires HTTPS** (a browser secure-context rule for `getUserMedia`). Plain `http://` works for every other workflow - manual entry, paste of an `MT:` payload, JSON import, the REST API - so dev and testing are unaffected. To use the camera-scan flow in a standalone deployment, put a TLS-terminating reverse proxy in front of the container or run on `localhost`. The HA App path is HTTPS out of the box via HA Ingress.
+> **Camera scanning requires HTTPS.** Browsers only allow `getUserMedia` in a secure context. On a standalone server, use a TLS reverse proxy or open Matter Registry on `localhost`. Manual entry, pasted `MT:` payloads, JSON import, and the REST API still work over plain HTTP. Home Assistant Ingress already provides a secure context.
 
-## Backup & restore
+## Backup and restore
 
-**Settings → Download full backup** exports a single JSON file containing all devices, credentials, and attachment images as base64. The file contains pairing PINs in plain text - treat it like a password file and store it somewhere only you can read.
+**Settings → Download full backup** creates one JSON file with every device, credential, and attachment. Images are stored in the file as base64. Pairing PINs are plain text, so keep the backup somewhere only you can read.
 
-To restore: **Settings → Restore from backup**, pick the file, choose a collision policy (skip or replace), apply.
+To restore it, open **Settings → Restore from backup**, choose the file, and decide whether duplicate records should be skipped or replaced.
 
-## What it's not
+## Good to know
 
-- **Not encrypted at rest.** The SQLite database stores pairing PINs in plain text. The whole-database export does the same. Protect the data directory and the export file with filesystem permissions.
-- **Not authenticated at the application layer.** Access control is delegated to HA Ingress (for the HA App path) or a reverse proxy (for standalone). Do not expose port 5591 to the public internet without a proxy in front.
-- **In-browser QR scanning needs HTTPS.** Camera capture relies on a browser API that's only available in a secure context. HA Ingress provides HTTPS automatically; for standalone, terminate TLS at a reverse proxy. Manual entry, paste, and JSON import work the same over plain HTTP, so this only affects the scan path.
+- The SQLite database and JSON backups contain pairing PINs in plain text. Protect the data directory and backup files with filesystem permissions.
+- Matter Registry relies on Home Assistant Ingress or your own reverse proxy for access control. Do not expose port 5591 to the public internet.
+- Camera scanning needs HTTPS. This restriction does not affect manual entry, pasted payloads, or JSON imports.
+- Sticker printing does not work in the iOS Home Assistant companion app. Its embedded web view (`WKWebView`) does nothing when you tap "Print." Open Matter Registry in Safari on the same iPhone or iPad instead. Printing also works in desktop browsers and on Android.
 
 ## License
 

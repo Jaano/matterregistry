@@ -75,6 +75,7 @@ class T:
         return self.__str__()
 
 
+@cache
 def get_t(lang: str) -> T:
     """Return a T for *lang*, with English as fallback for missing keys."""
     trans = _all_translations()
@@ -84,12 +85,32 @@ def get_t(lang: str) -> T:
     return T(_deep_merge(en, trans[lang]))
 
 
+def _parse_accept_language(accept_language: str) -> list[str]:
+    """Split an Accept-Language header into tags ordered by descending q weight."""
+    parsed: list[tuple[str, float]] = []
+    for seg in accept_language.split(","):
+        seg = seg.strip()
+        if not seg:
+            continue
+        tag, _, params = seg.partition(";")
+        q = 1.0
+        for param in params.split(";"):
+            param = param.strip()
+            if param.startswith("q="):
+                try:
+                    q = float(param[2:])
+                except ValueError:
+                    q = 0.0
+        parsed.append((tag.strip().lower(), q))
+    parsed.sort(key=lambda item: item[1], reverse=True)
+    return [tag for tag, _ in parsed]
+
+
 def resolve_lang(cookie: str, accept_language: str = "") -> str:
     """Pick the best supported language from cookie → Accept-Language → 'en'."""
     if cookie in SUPPORTED_LANGS:
         return cookie
-    for seg in accept_language.split(","):
-        tag = seg.split(";")[0].strip().lower()
+    for tag in _parse_accept_language(accept_language):
         if tag in SUPPORTED_LANGS:
             return tag
         short = tag.split("-")[0]

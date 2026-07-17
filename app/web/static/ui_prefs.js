@@ -27,7 +27,7 @@
   function applyLang(value) {
     if (!value) return;
     document.documentElement.lang = value;
-    document.cookie = 'mr_lang=' + encodeURIComponent(value) + '; path=/; SameSite=Lax';
+    document.cookie = 'mr_lang=' + encodeURIComponent(value) + '; path=/; max-age=31536000; SameSite=Lax';
   }
 
   applyLang(localStorage.getItem(LANG_KEY) || '');
@@ -63,7 +63,8 @@
     if (themePicker) themePicker.value = localStorage.getItem(THEME_KEY) || 'system';
 
     var langPicker = document.querySelector('[data-lang-picker]');
-    if (langPicker) langPicker.value = localStorage.getItem(LANG_KEY) || 'en';
+    var storedLang = localStorage.getItem(LANG_KEY);
+    if (langPicker && storedLang) langPicker.value = storedLang;
 
     applyStickerFormat(localStorage.getItem(STICKER_KEY) || 'l7162');
     var stickerPicker = document.querySelector('[data-sticker-picker]');
