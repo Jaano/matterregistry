@@ -1,5 +1,5 @@
 # Stage 1: build wheels
-FROM python:3.13-slim@sha256:bffeb7bd6a85767587059c6ba23e1e9122078e3aa3fa836099171b9bb5a9bb00 AS builder
+FROM python:3.13-slim@sha256:6771159cd4fa5d9bba1258caf0b82e6b73458c694d178ad97c5e925c2d0e1a91 AS builder
 WORKDIR /build
 
 # Build dep wheels first - this layer + the pip cache mount survive
@@ -18,7 +18,7 @@ RUN --mount=type=cache,target=/root/.cache/pip \
     pip wheel --no-deps --wheel-dir /wheels .
 
 # Stage 2: runtime image
-FROM python:3.13-slim@sha256:bffeb7bd6a85767587059c6ba23e1e9122078e3aa3fa836099171b9bb5a9bb00
+FROM python:3.13-slim@sha256:6771159cd4fa5d9bba1258caf0b82e6b73458c694d178ad97c5e925c2d0e1a91
 LABEL org.opencontainers.image.source="https://github.com/Jaano/matterregistry"
 LABEL org.opencontainers.image.licenses="Apache-2.0"
 
