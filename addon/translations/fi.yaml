@@ -1,0 +1,13 @@
+configuration:
+  log_level:
+    name: "Lokitaso"
+    description: "Sovelluslokien monisanaisuus (trace, debug, info, warning, error, critical)."
+  python_matter_server_url:
+    name: "Matter Server -URL"
+    description: "python-matter-serverin WebSocket-URL (esim. ws://core-matter-server:5580/ws). Jätä tyhjäksi poistaaksesi Matter Server -integraation käytöstä."
+  otbr_url:
+    name: "OpenThread Border Router -URL"
+    description: "OTBR:n REST-URL (esim. http://core-openthread-border-router:8081). Jätä tyhjäksi poistaaksesi OTBR-integraation käytöstä."
+  direct_api:
+    name: "Ota suora REST-API käyttöön"
+    description: "Salli pääsy REST-API:n kautta portissa 5591 ilman Home Assistant Ingressiä. Edellyttää portin määrittämistä yllä olevassa Verkko-kohdassa. VAROITUS: API:ssa ei ole todennusta - ota käyttöön vain luotetuissa verkoissa."

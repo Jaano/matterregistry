@@ -1,0 +1,13 @@
+configuration:
+  log_level:
+    name: "Livello di log"
+    description: "Verbosità dei log dell'applicazione (trace, debug, info, warning, error, critical)."
+  python_matter_server_url:
+    name: "URL Matter Server"
+    description: "URL WebSocket di python-matter-server (es. ws://core-matter-server:5580/ws). Lascia vuoto per disattivare l'integrazione Matter Server."
+  otbr_url:
+    name: "URL OpenThread Border Router"
+    description: "URL REST dell'OTBR (es. http://core-openthread-border-router:8081). Lascia vuoto per disattivare l'integrazione OTBR."
+  direct_api:
+    name: "Attiva API REST diretta"
+    description: "Consenti l'accesso tramite l'API REST sulla porta 5591 senza passare per Home Assistant Ingress. Richiede l'impostazione di una porta in Rete sopra. AVVISO: l'API non ha autenticazione - attivala solo su reti attendibili."

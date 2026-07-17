@@ -1,0 +1,13 @@
+configuration:
+  log_level:
+    name: "ログレベル"
+    description: "アプリケーションログの詳細度（trace、debug、info、warning、error、critical）。"
+  python_matter_server_url:
+    name: "Matter Server URL"
+    description: "python-matter-server の WebSocket URL（例: ws://core-matter-server:5580/ws）。空欄にすると Matter Server 連携を無効にします。"
+  otbr_url:
+    name: "OpenThread Border Router URL"
+    description: "OTBR の REST URL（例: http://core-openthread-border-router:8081）。空欄にすると OTBR 連携を無効にします。"
+  direct_api:
+    name: "直接 REST API を有効化"
+    description: "Home Assistant Ingress を経由せずにポート 5591 の REST API 経由でのアクセスを許可します。上の「ネットワーク」でポートを設定する必要があります。警告: この API には認証がありません - 信頼できるネットワークでのみ有効にしてください。"

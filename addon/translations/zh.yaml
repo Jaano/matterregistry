@@ -1,0 +1,13 @@
+configuration:
+  log_level:
+    name: "日志级别"
+    description: "应用日志的详细程度（trace、debug、info、warning、error、critical）。"
+  python_matter_server_url:
+    name: "Matter Server URL"
+    description: "python-matter-server 的 WebSocket URL（例如 ws://core-matter-server:5580/ws）。留空以禁用 Matter Server 集成。"
+  otbr_url:
+    name: "OpenThread Border Router URL"
+    description: "OTBR 的 REST URL（例如 http://core-openthread-border-router:8081）。留空以禁用 OTBR 集成。"
+  direct_api:
+    name: "启用直接 REST API"
+    description: "允许通过端口 5591 上的 REST API 访问，而不经过 Home Assistant Ingress。需要在上面的“网络”中设置端口。警告：该 API 没有身份验证 - 仅在受信任的网络上启用。"

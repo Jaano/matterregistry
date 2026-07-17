@@ -1,0 +1,13 @@
+configuration:
+  log_level:
+    name: "Рівень журналу"
+    description: "Докладність журналів застосунку (trace, debug, info, warning, error, critical)."
+  python_matter_server_url:
+    name: "URL Matter Server"
+    description: "WebSocket-URL python-matter-server (напр. ws://core-matter-server:5580/ws). Залиште порожнім, щоб вимкнути інтеграцію Matter Server."
+  otbr_url:
+    name: "URL OpenThread Border Router"
+    description: "REST-URL OTBR (напр. http://core-openthread-border-router:8081). Залиште порожнім, щоб вимкнути інтеграцію OTBR."
+  direct_api:
+    name: "Увімкнути прямий REST API"
+    description: "Дозволити доступ через REST API на порту 5591 без проходження через Home Assistant Ingress. Потребує встановлення порту в розділі Мережа вище. ПОПЕРЕДЖЕННЯ: API не має автентифікації - вмикайте лише в довірених мережах."

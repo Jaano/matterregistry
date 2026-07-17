@@ -260,6 +260,17 @@ settings:
     description: "Valige kuvatav keel."
     en: "English"
     et: "Eesti"
+    de: "Deutsch"
+    es: "Español"
+    fr: "Français"
+    zh: "中文"
+    fi: "Suomi"
+    ja: "日本語"
+    pt: "Português"
+    hi: "हिन्दी"
+    uk: "Українська"
+    pl: "Polski"
+    it: "Italiano"
 
   printing:
     title: "Printimine"

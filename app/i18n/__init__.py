@@ -26,7 +26,7 @@ from typing import Any
 import yaml
 
 _I18N_DIR = Path(__file__).parent
-SUPPORTED_LANGS = ("en", "et")
+SUPPORTED_LANGS = ("en", "et", "de", "es", "fr", "zh", "fi", "ja", "pt", "hi", "uk", "pl", "it")
 
 
 @cache

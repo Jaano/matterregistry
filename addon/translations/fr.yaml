@@ -1,0 +1,13 @@
+configuration:
+  log_level:
+    name: "Niveau de journalisation"
+    description: "Verbosité des journaux de l'application (trace, debug, info, warning, error, critical)."
+  python_matter_server_url:
+    name: "URL du Matter Server"
+    description: "URL WebSocket du python-matter-server (p. ex. ws://core-matter-server:5580/ws). Laissez vide pour désactiver l'intégration Matter Server."
+  otbr_url:
+    name: "URL de l'OpenThread Border Router"
+    description: "URL REST de l'OTBR (p. ex. http://core-openthread-border-router:8081). Laissez vide pour désactiver l'intégration OTBR."
+  direct_api:
+    name: "Activer l'API REST directe"
+    description: "Autoriser l'accès via l'API REST sur le port 5591 sans passer par Home Assistant Ingress. Nécessite de définir un port sous Réseau ci-dessus. AVERTISSEMENT : l'API n'a aucune authentification - à activer uniquement sur des réseaux de confiance."

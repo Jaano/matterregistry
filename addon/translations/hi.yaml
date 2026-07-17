@@ -1,0 +1,13 @@
+configuration:
+  log_level:
+    name: "लॉग स्तर"
+    description: "एप्लिकेशन लॉग की विस्तृतता (trace, debug, info, warning, error, critical)।"
+  python_matter_server_url:
+    name: "Matter Server URL"
+    description: "python-matter-server का WebSocket URL (जैसे ws://core-matter-server:5580/ws)। Matter Server इंटीग्रेशन अक्षम करने के लिए खाली छोड़ें।"
+  otbr_url:
+    name: "OpenThread Border Router URL"
+    description: "OTBR का REST URL (जैसे http://core-openthread-border-router:8081)। OTBR इंटीग्रेशन अक्षम करने के लिए खाली छोड़ें।"
+  direct_api:
+    name: "प्रत्यक्ष REST API सक्षम करें"
+    description: "Home Assistant Ingress से गुज़रे बिना पोर्ट 5591 पर REST API के माध्यम से पहुँच की अनुमति दें। ऊपर नेटवर्क के अंतर्गत एक पोर्ट सेट करना आवश्यक है। चेतावनी: API में कोई प्रमाणीकरण नहीं है - केवल विश्वसनीय नेटवर्क पर सक्षम करें।"
