@@ -20,12 +20,15 @@ from .homekit import (
 )
 from .matter import compute_manual_code, decode_setup_payload, verify_manual_code
 from .models import (
+    PRODUCT_SOURCED_FIELDS,
     SOURCED_FIELDS,
     Attachment,
     Device,
     DeviceFabricMembership,
     DeviceProtocol,
     FieldSource,
+    Product,
+    ProductLink,
     Property,
     PropertyType,
 )
@@ -35,6 +38,99 @@ class ProtocolMismatchError(Exception):
     """Raised when a scan's protocol differs from the device's existing onboarding code."""
 
 
+_DEVICE_PRODUCT_FIELD_MAP = {
+    "vendor": "vendor",
+    "product": "name",
+    "device_model": "model",
+    "vendor_id": "vendor_id",
+    "product_id": "product_id",
+}
+
+
+def set_product_field(product: Product, field: str, value: Any, source: FieldSource) -> bool:
+    """Conditionally set a Product field when the incoming source has priority."""
+    if field not in PRODUCT_SOURCED_FIELDS:
+        raise ValueError(f"set_product_field: '{field}' is not a sourced field")
+    source_attr = f"{field}_source"
+    current_raw = getattr(product, source_attr, FieldSource.generated)
+    current = FieldSource(current_raw) if isinstance(current_raw, str) else current_raw
+    if FieldSource.priority(source) >= FieldSource.priority(current):
+        setattr(product, field, value)
+        setattr(product, source_attr, source)
+        return True
+    return False
+
+
+def resolve_product(
+    session: Session,
+    *,
+    protocol: DeviceProtocol | None,
+    vendor_id: int | None = None,
+    product_id: int | None = None,
+    name: str | None = None,
+    vendor: str | None = None,
+    model: str | None = None,
+    source: FieldSource = FieldSource.scanned,
+    counts: dict[str, int] | None = None,
+) -> Product:
+    """Find a complete Matter SKU or create a conservative Product record.
+
+    Reuse only applies to a complete Matter identity - ``protocol="matter"``
+    with both *vendor_id* and *product_id* set. Any other protocol, or an
+    incomplete Matter identity, always creates a dedicated Product so
+    unrelated or ambiguous devices (notably HomeKit, which has no global SKU
+    identity) are never fuzzy-merged together.
+
+    When an existing Product is reused, *name*/*vendor*/*model* are projected
+    onto it through ``set_product_field`` (provenance-gated by *source*), so
+    a later sync with better catalog data updates every linked Device.
+
+    Pass *counts* - a dict with "created"/"updated" int keys - to have the
+    caller's product creation/update counters incremented for sync-result
+    reporting (see ``SyncResult.product_created``/``product_updated``).
+    """
+    if protocol is DeviceProtocol.matter and vendor_id is not None and product_id is not None:
+        existing = session.exec(
+            select(Product).where(
+                Product.protocol == protocol,
+                Product.vendor_id == vendor_id,
+                Product.product_id == product_id,
+            )
+        ).first()
+        if existing is not None:
+            changed = False
+            if name:
+                changed |= set_product_field(existing, "name", name, source)
+            if vendor:
+                changed |= set_product_field(existing, "vendor", vendor, source)
+            if model:
+                changed |= set_product_field(existing, "model", model, source)
+            if changed:
+                existing.updated_at = datetime.now(UTC)
+                session.add(existing)
+                if counts is not None:
+                    counts["updated"] = counts.get("updated", 0) + 1
+            return existing
+    product = Product(
+        name=name or "Unresolved product",
+        protocol=protocol,
+        vendor=vendor,
+        model=model,
+        vendor_id=vendor_id,
+        product_id=product_id,
+        name_source=source if name else FieldSource.generated,
+        vendor_source=source if vendor else FieldSource.generated,
+        model_source=source if model else FieldSource.generated,
+        vendor_id_source=source if vendor_id is not None else FieldSource.generated,
+        product_id_source=source if product_id is not None else FieldSource.generated,
+    )
+    session.add(product)
+    session.flush()
+    if counts is not None:
+        counts["created"] = counts.get("created", 0) + 1
+    return product
+
+
 def set_field(device: Device, field: str, value: Any, source: FieldSource) -> bool:
     """Conditionally set a Device field if *source* priority >= current source priority.
 
@@ -42,6 +138,11 @@ def set_field(device: Device, field: str, value: Any, source: FieldSource) -> bo
     higher-priority existing source.  Only operates on fields listed in
     SOURCED_FIELDS; raises ValueError for unknown fields.
     """
+    product_field = _DEVICE_PRODUCT_FIELD_MAP.get(field)
+    if product_field:
+        if device.product_record is None:
+            raise ValueError("set_field: device has no Product")
+        return set_product_field(device.product_record, product_field, value, source)
     if field not in SOURCED_FIELDS:
         raise ValueError(f"set_field: '{field}' is not a sourced field")
     source_attr = f"{field}_source"
@@ -143,10 +244,14 @@ def _apply_scan_matter_payload(session: Session, device: Device, payload_str: st
         compute_manual_code(sp.passcode, sp.discriminator),
     )
     _upsert_credential(session, device.id, PropertyType.discriminator, str(sp.discriminator))
-    set_field(device, "vendor_id", sp.vendor_id, FieldSource.scanned)
-    set_field(device, "product_id", sp.product_id, FieldSource.scanned)
-    # Set protocol to matter on first Matter scan (mirrors the HomeKit path below).
-    device.protocol = DeviceProtocol.matter
+    product = resolve_product(
+        session,
+        protocol=DeviceProtocol.matter,
+        vendor_id=sp.vendor_id,
+        product_id=sp.product_id,
+    )
+    device.product_record_id = product.id
+    device.product_record = product
     session.add(device)
 
 
@@ -161,8 +266,10 @@ def _apply_scan_homekit_payload(session: Session, device: Device, payload_str: s
         format_homekit_manual_code(sp.setup_code),
     )
     _upsert_credential(session, device.id, PropertyType.discriminator, sp.setup_id)
-    # Set protocol to homekit on first HomeKit scan
-    device.protocol = DeviceProtocol.homekit
+    if device.product_record is None or device.product_record.protocol is None:
+        product = resolve_product(session, protocol=DeviceProtocol.homekit)
+        device.product_record_id = product.id
+        device.product_record = product
     session.add(device)
 
 
@@ -210,8 +317,10 @@ def _apply_scan_matter_manual_code(session: Session, device: Device, code: str) 
     _upsert_credential(session, device.id, PropertyType.setup_pin, str(pin))
     _upsert_credential(session, device.id, PropertyType.manual_code, code)
     _upsert_credential(session, device.id, PropertyType.discriminator, str(disc))
-    # Set protocol to matter on first Matter scan (mirrors the HomeKit path below).
-    device.protocol = DeviceProtocol.matter
+    if device.product_record is None or device.product_record.protocol is None:
+        product = resolve_product(session, protocol=DeviceProtocol.matter)
+        device.product_record_id = product.id
+        device.product_record = product
     session.add(device)
 
 
@@ -220,7 +329,10 @@ def _apply_scan_homekit_manual_code(session: Session, device: Device, code: str)
     formatted = format_homekit_manual_code(setup_code)
     _upsert_credential(session, device.id, PropertyType.setup_pin, str(setup_code))
     _upsert_credential(session, device.id, PropertyType.manual_code, formatted)
-    device.protocol = DeviceProtocol.homekit
+    if device.product_record is None or device.product_record.protocol is None:
+        product = resolve_product(session, protocol=DeviceProtocol.homekit)
+        device.product_record_id = product.id
+        device.product_record = product
     session.add(device)
 
 
@@ -292,11 +404,6 @@ def compute_onboarding_display(device: Device, properties: list[Property]) -> di
 
 _MERGE_SCALAR_FIELDS = [
     "room",
-    "vendor",
-    "product",
-    "device_model",
-    "vendor_id",
-    "product_id",
     "serial",
     "hardware_version",
     "firmware_version",
@@ -309,9 +416,6 @@ _MERGE_SCALAR_FIELDS = [
 _MERGE_PREVIEW_LABELS = [
     ("Name", "name"),
     ("Room", "room"),
-    ("Vendor", "vendor"),
-    ("Product", "product"),
-    ("Model", "device_model"),
     ("Serial", "serial"),
     ("Hardware version", "hardware_version"),
     ("Firmware version", "firmware_version"),
@@ -425,6 +529,108 @@ def merge_devices(session: Session, source_id: str, target_id: str) -> None:
     )
 
 
+_PRODUCT_MERGE_PREVIEW_LABELS = [
+    ("Name", "name"),
+    ("Vendor", "vendor"),
+    ("Model", "model"),
+    ("Vendor ID", "vendor_id"),
+    ("Product ID", "product_id"),
+    ("Description", "description"),
+]
+
+
+def build_product_merge_preview(source: Product, target: Product) -> list[dict]:
+    """Return per-field preview of which value wins after a Product merge.
+
+    Mirrors the priority policy `set_product_field` applies: for each
+    sourced field, the side whose provenance has equal-or-higher priority
+    wins; a blank target field always yields to a present source value.
+    """
+    rows = []
+    for label, field in _PRODUCT_MERGE_PREVIEW_LABELS:
+        sv = getattr(source, field)
+        tv = getattr(target, field)
+        if tv is not None and sv is not None:
+            src_source = getattr(source, f"{field}_source", FieldSource.generated)
+            tgt_source = getattr(target, f"{field}_source", FieldSource.generated)
+            winner = (
+                "target"
+                if FieldSource.priority(tgt_source) >= FieldSource.priority(src_source)
+                else "source"
+            )
+        elif tv is not None:
+            winner = "target"
+        elif sv is not None:
+            winner = "source"
+        else:
+            winner = None
+        rows.append(
+            {
+                "label": label,
+                "source_val": str(sv) if sv is not None else None,
+                "target_val": str(tv) if tv is not None else None,
+                "winner": winner,
+                "conflict": sv is not None and tv is not None and str(sv) != str(tv),
+            }
+        )
+    return rows
+
+
+def merge_products(session: Session, source_id: str, target_id: str) -> None:
+    """Merge source Product into target, then delete source.
+
+    Policy: for each sourced field, keep whichever side's provenance has
+    equal-or-higher priority (via `set_product_field`); protocol has no
+    provenance column, so target wins when set, else source. All Devices
+    and ProductLinks referencing source are reassigned to target.
+    """
+    source = session.get(Product, source_id)
+    target = session.get(Product, target_id)
+    if source is None or target is None:
+        raise ValueError("Product not found")
+
+    if (
+        source.protocol is not None
+        and target.protocol is not None
+        and source.protocol != target.protocol
+    ):
+        raise ProtocolMismatchError(
+            f"Cannot merge a {source.protocol.value} product into a "
+            f"{target.protocol.value} product - commissioning protocols must match."
+        )
+
+    if target.protocol is None and source.protocol is not None:
+        target.protocol = source.protocol
+
+    for field in PRODUCT_SOURCED_FIELDS:
+        value = getattr(source, field)
+        if value is not None:
+            source_of_value = getattr(source, f"{field}_source", FieldSource.generated)
+            set_product_field(target, field, value, source_of_value)
+
+    target.updated_at = datetime.now(UTC)
+    session.add(target)
+
+    for device in session.exec(select(Device).where(Device.product_record_id == source_id)).all():
+        device.product_record_id = target_id
+        session.add(device)
+
+    for link in session.exec(
+        select(ProductLink).where(ProductLink.product_record_id == source_id)
+    ).all():
+        link.product_record_id = target_id
+        session.add(link)
+
+    session.flush()
+    session.delete(source)
+    audit_log(
+        session,
+        action="product.merge",
+        entity=f"product:{target_id}",
+        reason=f"merged_from:{source_id}",
+    )
+
+
 def apply_scan_fields(
     session: Session,
     device: Device,
@@ -454,7 +660,10 @@ def apply_scan_fields(
             format_homekit_manual_code(passcode),
         )
         _upsert_credential(session, device.id, PropertyType.discriminator, setup_id)
-        device.protocol = DeviceProtocol.homekit
+        if device.product_record is None or device.product_record.protocol is None:
+            product = resolve_product(session, protocol=DeviceProtocol.homekit)
+            device.product_record_id = product.id
+            device.product_record = product
         session.add(device)
         return
 
@@ -464,10 +673,17 @@ def apply_scan_fields(
         session, device.id, PropertyType.manual_code, compute_manual_code(passcode, discriminator)
     )
     _upsert_credential(session, device.id, PropertyType.discriminator, str(discriminator))
-    if vid is not None:
-        set_field(device, "vendor_id", vid, FieldSource.scanned)
-    if pid is not None:
-        set_field(device, "product_id", pid, FieldSource.scanned)
-    # Set protocol to matter on first Matter scan (mirrors the HomeKit branch above).
-    device.protocol = DeviceProtocol.matter
+    if vid is not None and pid is not None:
+        product = resolve_product(
+            session,
+            protocol=DeviceProtocol.matter,
+            vendor_id=vid,
+            product_id=pid,
+        )
+        device.product_record_id = product.id
+        device.product_record = product
+    elif device.product_record is None or device.product_record.protocol is None:
+        product = resolve_product(session, protocol=DeviceProtocol.matter)
+        device.product_record_id = product.id
+        device.product_record = product
     session.add(device)

@@ -1,0 +1,97 @@
+<div id="product-rows">
+{% if products %}
+
+{% macro product_thumb(p) %}
+{% set icon_link = (p.links | selectattr('kind', 'equalto', 'icon') | list | first) if p.links else none %}
+{% set img_link = (p.links | selectattr('kind', 'equalto', 'image') | list | first) if p.links else none %}
+{% set src = icon_link.url if icon_link else (img_link.url if img_link else none) %}
+<div class="w-10 h-10 shrink-0 rounded bg-gray-100 dark:bg-gray-700 flex items-center justify-center overflow-hidden">
+  {% if src %}
+  <img src="{{ src }}" alt="" loading="lazy" referrerpolicy="no-referrer"
+       class="w-full h-full object-contain"
+       onerror="this.style.display='none'; this.nextElementSibling.style.removeProperty('display');">
+  <span class="{{ p.protocol.icon if p.protocol else '' }} text-gray-400" style="display:none" role="img" aria-label="{{ p.protocol.label if p.protocol else '' }}">{% if not (p.protocol and p.protocol.icon) %}{{ p.name[0] | upper }}{% endif %}</span>
+  {% elif p.protocol and p.protocol.icon %}
+  <span class="{{ p.protocol.icon }} text-gray-400" role="img" aria-label="{{ p.protocol.label }}" title="{{ p.protocol.label }}"></span>
+  {% else %}
+  <span class="text-gray-400 text-sm font-medium">{{ p.name[0] | upper }}</span>
+  {% endif %}
+</div>
+{% endmacro %}
+
+<div class="bg-white rounded shadow overflow-hidden">
+  <div class="px-4 py-2 text-xs text-gray-400 border-b border-gray-100">
+    {{ products | length }} {{ t.product.list.col_product | lower }}{{ 's' if products | length != 1 else '' }}
+    {% if any_filter %} {{ t.product.list.matching }}{% endif %}
+  </div>
+
+  <div class="sm:hidden divide-y divide-gray-100">
+    {% for p in products %}
+    <a href="{{ url('/products/' + p.id) }}" class="flex items-start gap-3 px-4 py-3 hover:bg-gray-50">
+      {{ product_thumb(p) }}
+      <div class="flex-1 min-w-0">
+        <div class="flex items-start justify-between gap-2">
+          <span class="font-medium text-blue-600">{{ p.name }}</span>
+          {% if p.protocol %}<span class="text-xs text-gray-400">{{ p.protocol.label }}</span>{% endif %}
+        </div>
+        <div class="mt-1 text-xs text-gray-600">
+          {{ p.vendor or "-" }}{% if p.model %} &middot; {{ p.model }}{% endif %}
+        </div>
+        <div class="mt-1.5 flex items-center justify-between">
+          <span class="text-xs text-gray-500 font-mono">{{ p.vid_pid_display or "-" }}</span>
+          <a href="{{ url('/devices') }}?q={{ p.name | urlencode }}" class="text-xs text-blue-600 hover:underline" onclick="event.stopPropagation()">
+            {{ device_counts.get(p.id, 0) }} {{ t.product.list.col_devices | lower }}
+          </a>
+        </div>
+      </div>
+    </a>
+    {% endfor %}
+  </div>
+
+  <div class="hidden sm:block overflow-x-auto">
+  <table class="min-w-full text-sm">
+    <thead class="bg-gray-100 text-gray-600 uppercase text-xs">
+      <tr>
+        <th class="px-4 py-3 text-left w-14">{{ t.product.list.col_thumb }}</th>
+        <th class="px-4 py-3 text-left">{{ t.product.list.col_product }}</th>
+        <th class="px-4 py-3 text-left">{{ t.product.list.col_vendor }}</th>
+        <th class="px-4 py-3 text-left">{{ t.product.list.col_model }}</th>
+        <th class="px-4 py-3 text-left">{{ t.product.list.col_protocol }}</th>
+        <th class="px-4 py-3 text-left">{{ t.product.list.col_vid_pid }}</th>
+        <th class="px-4 py-3 text-left">{{ t.product.list.col_devices }}</th>
+      </tr>
+    </thead>
+    <tbody class="divide-y divide-gray-100">
+      {% for p in products %}
+      <tr class="hover:bg-gray-50">
+        <td class="px-4 py-3">{{ product_thumb(p) }}</td>
+        <td class="px-4 py-3 font-medium">
+          <a href="{{ url('/products/' + p.id) }}" class="text-blue-600 hover:underline">{{ p.name }}</a>
+        </td>
+        <td class="px-4 py-3 text-gray-600">{{ p.vendor or "-" }}</td>
+        <td class="px-4 py-3 text-gray-600">{{ p.model or "-" }}</td>
+        <td class="px-4 py-3 text-gray-600">{{ p.protocol.label if p.protocol else "-" }}</td>
+        <td class="px-4 py-3 text-gray-600 font-mono">{{ p.vid_pid_display or "-" }}</td>
+        <td class="px-4 py-3">
+          <a href="{{ url('/devices') }}?q={{ p.name | urlencode }}" class="text-blue-600 hover:underline">
+            {{ device_counts.get(p.id, 0) }}
+          </a>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</div>
+{% else %}
+<div class="text-center py-16 text-gray-400">
+  {% if any_filter %}
+  <p class="text-lg mb-4">{{ t.product.list.filtered_empty }}</p>
+  <a href="{{ url('/products') }}" class="text-blue-600 hover:underline">{{ t.product.list.clear_all_filters }}</a>
+  {% else %}
+  <p class="text-lg mb-4">{{ t.product.list.empty }}</p>
+  <a href="{{ url('/products/new') }}" class="text-blue-600 hover:underline">{{ t.product.list.empty_add }}</a>
+  {% endif %}
+</div>
+{% endif %}
+</div>

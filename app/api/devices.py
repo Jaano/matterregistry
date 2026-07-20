@@ -15,6 +15,7 @@ from ..models import (
     DeviceLinkSource,
     DeviceStatus,
     FieldSource,
+    Product,
     Property,
     PropertyType,
 )
@@ -56,6 +57,16 @@ def _device_out(device: Device, session: Session) -> DeviceOut:
     out.sources = {
         f: getattr(device, f"{f}_source", FieldSource.generated).value for f in SOURCED_FIELDS
     }
+    if device.product_record:
+        out.sources.update(
+            {
+                "vendor": device.product_record.vendor_source.value,
+                "product": device.product_record.name_source.value,
+                "device_model": device.product_record.model_source.value,
+                "vendor_id": device.product_record.vendor_id_source.value,
+                "product_id": device.product_record.product_id_source.value,
+            }
+        )
     # Populate ha_device_id from DeviceLink (not a Device column any more)
     link = session.exec(
         select(DeviceLink)
@@ -82,15 +93,16 @@ def list_devices(
 ):
     from sqlmodel import or_
 
-    stmt = select(Device)
+    stmt = select(Device).join(Product)
     if q:
         pattern = f"%{q}%"
         stmt = stmt.where(
             or_(
                 Device.name.ilike(pattern),  # type: ignore[attr-defined]
                 Device.room.ilike(pattern),  # type: ignore[union-attr]
-                Device.vendor.ilike(pattern),  # type: ignore[union-attr]
-                Device.product.ilike(pattern),  # type: ignore[union-attr]
+                col(Product.vendor).ilike(pattern),
+                col(Product.name).ilike(pattern),
+                col(Product.model).ilike(pattern),
                 Device.serial.ilike(pattern),  # type: ignore[union-attr]
                 Device.notes.ilike(pattern),  # type: ignore[union-attr]
             )
@@ -100,7 +112,7 @@ def list_devices(
     else:
         stmt = stmt.where(col(Device.status) != DeviceStatus.hidden)
     if vendor:
-        stmt = stmt.where(Device.vendor == vendor)
+        stmt = stmt.where(Product.vendor == vendor)
     if room:
         stmt = stmt.where(Device.room == room)
     devices = session.exec(stmt).all()
@@ -109,7 +121,11 @@ def list_devices(
 
 @router.post("", response_model=DeviceOut, status_code=201)
 def create_device(data: DeviceCreate, session: Session = Depends(get_session)):
-    device = Device(**data.model_dump())
+    values = data.model_dump()
+    product_record_id = values.pop("product_record_id")
+    if product_record_id and not session.get(Product, product_record_id):
+        raise HTTPException(status_code=422, detail="Product not found")
+    device = Device(product_record_id=product_record_id, **values)
     # Stamp user provenance on every non-None field supplied by the caller.
     for f in SOURCED_FIELDS:
         if getattr(device, f, None) is not None:
@@ -133,6 +149,11 @@ def get_device(id: str, session: Session = Depends(get_session)):
 def update_device(id: str, data: DeviceUpdate, session: Session = Depends(get_session)):
     device = _load_device(id, session)
     for field, value in data.model_dump(exclude_unset=True).items():
+        if field == "product_record_id":
+            if value is None or not session.get(Product, value):
+                raise HTTPException(status_code=422, detail="Product not found")
+            setattr(device, field, value)
+            continue
         if field in SOURCED_FIELDS:
             if getattr(device, field) != value:
                 set_field(device, field, value, FieldSource.user)

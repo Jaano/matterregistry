@@ -1,7 +1,9 @@
 """Import backup JSON envelope into the database."""
 
 import base64
+import copy
 import hashlib
+import uuid
 from dataclasses import dataclass, field
 from datetime import date, datetime
 
@@ -19,6 +21,9 @@ from .models import (
     DeviceStatus,
     Fabric,
     FieldSource,
+    Product,
+    ProductLink,
+    ProductLinkKind,
     Property,
     PropertyType,
     ThreadNetwork,
@@ -43,6 +48,61 @@ _VALID_ATT_KIND = {s.value for s in AttachmentKind}
 _VALID_FIELD_SOURCE = {s.value for s in FieldSource}
 
 
+def _normal(value: object) -> str:
+    return " ".join(str(value or "").casefold().split())
+
+
+def _upgrade_legacy_products(payload: dict) -> dict:
+    """Return a v9-shaped copy, conservatively synthesising Products for old backups."""
+    if payload.get("products") is not None:
+        return payload
+    upgraded = copy.deepcopy(payload)
+    products: list[dict] = []
+    products_by_key: dict[tuple, dict] = {}
+    for device in upgraded.get("devices", []):
+        protocol = device.get("protocol", "matter")
+        vendor_id = device.get("vendor_id")
+        product_id = device.get("product_id")
+        descriptive = tuple(
+            _normal(device.get(field)) for field in ("vendor", "product", "device_model")
+        )
+        key: tuple[object, ...]
+        if protocol == "matter" and vendor_id is not None and product_id is not None:
+            key = ("matter", vendor_id, product_id)
+        elif any(descriptive):
+            key = ("descriptive", protocol, *descriptive)
+        else:
+            key = ("dedicated", device["id"])
+        product = products_by_key.get(key)
+        if product is None:
+            sources = device.get("_sources") or {}
+            product = {
+                "id": str(uuid.uuid4()),
+                "name": device.get("product") or f"Unresolved product for {device['name']}",
+                "protocol": protocol,
+                "vendor": device.get("vendor"),
+                "model": device.get("device_model"),
+                "vendor_id": vendor_id,
+                "product_id": product_id,
+                "description": None,
+                "_sources": {
+                    "name": sources.get("product", "generated"),
+                    "vendor": sources.get("vendor", "generated"),
+                    "model": sources.get("device_model", "generated"),
+                    "vendor_id": sources.get("vendor_id", "generated"),
+                    "product_id": sources.get("product_id", "generated"),
+                    "description": "generated",
+                },
+            }
+            products_by_key[key] = product
+            products.append(product)
+        device["product_record_id"] = product["id"]
+    upgraded["products"] = products
+    upgraded["product_links"] = []
+    upgraded["format_version"] = 9
+    return upgraded
+
+
 @dataclass
 class ImportPlan:
     creates: list[str] = field(default_factory=list)
@@ -64,12 +124,12 @@ def _validate_top(payload: dict) -> list[str]:
     errors = []
     if not isinstance(payload, dict):
         return ["Payload is not a JSON object"]
-    # Accept format_version 1-8; v1-3 may have a 'settings' key which is now ignored;
+    # Accept format_version 1-9; v1-3 may have a 'settings' key which is now ignored;
     # v4 may have a 'location_text' field on devices which is silently ignored;
     # v5 used 'credentials' key (renamed to 'properties' in v6);
     # v6 had ha_device_id on the device dict (moved to device_links in v7);
     # v7 used PropertySource 'manual' (mapped to FieldSource 'user' in v8).
-    if payload.get("format_version") not in (1, 2, 3, 4, 5, 6, 7, 8):
+    if payload.get("format_version") not in (1, 2, 3, 4, 5, 6, 7, 8, 9):
         errors.append(
             f"Unsupported format_version: {payload.get('format_version')!r} (expected 1-8)"
         )
@@ -126,6 +186,7 @@ def _validate_attachment(a: dict, dev_id: str) -> list[str]:
 
 
 def plan_import(session: Session, payload: dict, *, policy: str = "skip") -> ImportPlan:
+    payload = _upgrade_legacy_products(payload)
     plan = ImportPlan()
     top_errors = _validate_top(payload)
     if top_errors:
@@ -145,6 +206,19 @@ def plan_import(session: Session, payload: dict, *, policy: str = "skip") -> Imp
             "Newer columns will load as NULL / extra columns will be ignored."
         )
 
+    existing_product_ids = {row.id for row in session.exec(select(Product)).all()}
+    product_ids = set(existing_product_ids)
+    for product in payload.get("products", []):
+        product_id = product.get("id")
+        if not product_id or not product.get("name"):
+            plan.errors.append("Product missing valid id or name")
+            continue
+        product_ids.add(product_id)
+        if product_id in existing_product_ids:
+            (plan.updates if policy == "replace" else plan.skips).append(f"product:{product_id}")
+        else:
+            plan.creates.append(f"product:{product_id}")
+
     existing_ids = {row.id for row in session.exec(select(Device)).all()}
 
     for d in payload.get("devices", []):
@@ -154,6 +228,9 @@ def plan_import(session: Session, payload: dict, *, policy: str = "skip") -> Imp
             continue
 
         dev_id = d["id"]
+        if d.get("product_record_id") not in product_ids:
+            plan.errors.append(f"Device {dev_id}: unknown product_record_id")
+            continue
         if dev_id in existing_ids:
             if policy == "replace":
                 plan.updates.append(f"device:{dev_id}")
@@ -210,6 +287,7 @@ def _parse_dt(s: str | None) -> datetime | None:
 
 def apply_import(session: Session, payload: dict, *, policy: str = "skip") -> ImportPlan:
     """Validate then apply. Returns plan (with errors list if invalid)."""
+    payload = _upgrade_legacy_products(payload)
     plan = plan_import(session, payload, policy=policy)
     if plan.errors:
         return plan
@@ -226,11 +304,61 @@ def apply_import(session: Session, payload: dict, *, policy: str = "skip") -> Im
             session.delete(row)
         for row in session.exec(select(Device)).all():  # type: ignore[assignment]
             session.delete(row)
+        for row in session.exec(select(ProductLink)).all():  # type: ignore[assignment]
+            session.delete(row)
+        for row in session.exec(select(Product)).all():  # type: ignore[assignment]
+            session.delete(row)
         for row in session.exec(select(Fabric)).all():  # type: ignore[assignment]
             session.delete(row)
         for row in session.exec(select(ThreadNetwork)).all():  # type: ignore[assignment]
             session.delete(row)
         session.flush()
+
+    # ── Product / ProductLink ───────────────────────────────────────────────
+    for product_data in payload.get("products", []):
+        product_id = product_data["id"]
+        if session.get(Product, product_id):
+            continue
+        raw_sources: dict[str, str] = product_data.get("_sources") or {}
+
+        def _product_src(field: str) -> FieldSource:
+            raw = raw_sources.get(field)
+            return FieldSource(raw) if raw in _VALID_FIELD_SOURCE else FieldSource.generated
+
+        protocol = product_data.get("protocol")
+        session.add(
+            Product(
+                id=product_id,
+                name=product_data["name"],
+                protocol=DeviceProtocol(protocol) if protocol else None,
+                vendor=product_data.get("vendor"),
+                model=product_data.get("model"),
+                vendor_id=product_data.get("vendor_id"),
+                product_id=product_data.get("product_id"),
+                description=product_data.get("description"),
+                name_source=_product_src("name"),
+                vendor_source=_product_src("vendor"),
+                model_source=_product_src("model"),
+                vendor_id_source=_product_src("vendor_id"),
+                product_id_source=_product_src("product_id"),
+                description_source=_product_src("description"),
+            )
+        )
+    session.flush()
+    for link_data in payload.get("product_links", []):
+        if session.get(ProductLink, link_data["id"]):
+            continue
+        session.add(
+            ProductLink(
+                id=link_data["id"],
+                product_record_id=link_data["product_record_id"],
+                kind=ProductLinkKind(link_data["kind"]),
+                url=link_data["url"],
+                label=link_data.get("label"),
+                alt_text=link_data.get("alt_text"),
+                position=link_data.get("position", 0),
+            )
+        )
 
     # ── Device / Credential / Attachment ────────────────────────────────────
     for d in payload.get("devices", []):
@@ -240,15 +368,12 @@ def apply_import(session: Session, payload: dict, *, policy: str = "skip") -> Im
 
         pd = d.get("purchase_date")
         wu = d.get("warranty_until")
-        # protocol may be None (device never scanned); absent defaults to matter (legacy).
-        raw_proto = d.get("protocol", "matter")
-        proto = DeviceProtocol(raw_proto) if raw_proto is not None else None
         # Restore per-field provenance.  Fall back to 'imported' for fields
         # that were non-null but had no _sources entry (older backups).
-        raw_sources: dict[str, str] = d.get("_sources") or {}
+        device_sources: dict[str, str] = d.get("_sources") or {}
 
         def _src(field: str) -> FieldSource:
-            raw = raw_sources.get(field)
+            raw = device_sources.get(field)
             if raw in _VALID_FIELD_SOURCE:
                 return FieldSource(raw)
             # Source not in current enum (e.g. old "imported" tag) → leave empty.
@@ -258,19 +383,10 @@ def apply_import(session: Session, payload: dict, *, policy: str = "skip") -> Im
             Device(
                 id=dev_id,
                 name=d["name"],
+                product_record_id=d["product_record_id"],
                 name_source=_src("name"),
                 room=d.get("room"),
                 room_source=_src("room"),
-                vendor=d.get("vendor"),
-                vendor_source=_src("vendor"),
-                product=d.get("product"),
-                product_source=_src("product"),
-                device_model=d.get("device_model"),
-                device_model_source=_src("device_model"),
-                vendor_id=d.get("vendor_id"),
-                vendor_id_source=_src("vendor_id"),
-                product_id=d.get("product_id"),
-                product_id_source=_src("product_id"),
                 serial=d.get("serial"),
                 serial_source=_src("serial"),
                 hardware_version=d.get("hardware_version"),
@@ -284,7 +400,6 @@ def apply_import(session: Session, payload: dict, *, policy: str = "skip") -> Im
                 notes_source=_src("notes"),
                 status=DeviceStatus(d.get("status", "active")),
                 status_source=_src("status"),
-                protocol=proto,
                 purchase_date=date.fromisoformat(pd) if pd else None,
                 purchase_date_source=_src("purchase_date"),
                 warranty_until=date.fromisoformat(wu) if wu else None,

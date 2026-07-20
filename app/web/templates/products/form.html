@@ -1,0 +1,133 @@
+{% extends "base.html" %}
+{% block title %}{% if product %}{{ t.product.form.edit_title }}{% else %}{{ t.product.form.new_title }}{% endif %} - {{ t.nav.brand }}{% endblock %}
+{% block content %}
+
+{%- macro src_hint(source) -%}
+{%- if product and source and source.value not in ('generated', 'user') -%}
+<span class="ml-1 text-[10px] text-gray-400">({{ source.label }})</span>
+{%- endif -%}
+{%- endmacro -%}
+
+<div class="max-w-2xl">
+  <div class="flex items-center gap-3 mb-6">
+    <a href="{{ url('/products') }}" class="text-gray-400 hover:text-gray-600 text-sm">← {{ t.product.list.title }}</a>
+    <h1 class="text-2xl font-bold">{% if product %}{{ t.product.form.edit_title }}{% else %}{{ t.product.form.new_title }}{% endif %}</h1>
+  </div>
+
+  <form method="post"
+        action="{{ url('/products/' + product.id) if product else url('/products') }}"
+        class="bg-white rounded shadow p-6 space-y-6">
+
+    <div>
+      <h2 class="text-sm font-semibold text-gray-700 uppercase tracking-wide mb-3">{{ t.product.form.identity_heading }}</h2>
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <div class="sm:col-span-2">
+          <label class="block text-sm font-medium text-gray-700 mb-1">{{ t.product.form.name_label }} <span class="text-red-500">*</span>{{ src_hint(product.name_source if product else none) }}</label>
+          <input type="text" name="name" required
+                 value="{{ product.name if product else '' }}"
+                 class="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+        </div>
+
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-1">{{ t.product.form.vendor_label }}{{ src_hint(product.vendor_source if product else none) }}</label>
+          <input type="text" name="vendor"
+                 value="{{ product.vendor or '' if product else '' }}"
+                 class="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+        </div>
+
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-1">{{ t.product.form.model_label }}{{ src_hint(product.model_source if product else none) }}</label>
+          <input type="text" name="model"
+                 value="{{ product.model or '' if product else '' }}"
+                 class="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+        </div>
+
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-1">{{ t.product.form.protocol_label }}</label>
+          <select name="protocol"
+                  class="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+            <option value="" {% if not (product and product.protocol) %}selected{% endif %}>{{ t.product.form.protocol_none }}</option>
+            {% for p in protocols %}
+            <option value="{{ p.value }}" {% if product and product.protocol == p %}selected{% endif %}>{{ p.label }}</option>
+            {% endfor %}
+          </select>
+        </div>
+
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-1">{{ t.product.form.vid_label }}{{ src_hint(product.vendor_id_source if product else none) }}</label>
+          <input type="text" name="vendor_id"
+                 value="{{ ('0x%04X' % product.vendor_id) if product and product.vendor_id is not none else '' }}"
+                 class="w-full border border-gray-300 rounded px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-500">
+        </div>
+
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-1">{{ t.product.form.pid_label }}{{ src_hint(product.product_id_source if product else none) }}</label>
+          <input type="text" name="product_id"
+                 value="{{ ('0x%04X' % product.product_id) if product and product.product_id is not none else '' }}"
+                 class="w-full border border-gray-300 rounded px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-500">
+        </div>
+        <p class="sm:col-span-2 -mt-2 text-xs text-gray-400">{{ t.product.form.vid_pid_hint }}</p>
+
+        <div class="sm:col-span-2">
+          <label class="block text-sm font-medium text-gray-700 mb-1">{{ t.product.form.description_label }}{{ src_hint(product.description_source if product else none) }}</label>
+          <textarea name="description" rows="3"
+                    class="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">{{ product.description or '' if product else '' }}</textarea>
+        </div>
+      </div>
+    </div>
+
+    <div class="pt-4 border-t border-gray-100">
+      <h2 class="text-sm font-semibold text-gray-700 uppercase tracking-wide mb-3">{{ t.product.form.links_heading }}</h2>
+      <div id="mr-product-links" class="space-y-2">
+        {% for l in links %}
+        {% include "products/_link_row.html" %}
+        {% endfor %}
+      </div>
+      <template id="mr-product-link-template">
+        {% set l = none %}
+        {% filter trim %}
+        {% include "products/_link_row.html" %}
+        {% endfilter %}
+      </template>
+      <button type="button" onclick="window.mrAddProductLinkRow()"
+              class="mt-2 text-sm text-blue-600 hover:underline">
+        {{ t.product.form.add_link_btn }}
+      </button>
+      {% if not links %}
+      <p id="mr-product-links-empty" class="text-sm text-gray-400 mt-1">{{ t.product.form.no_links }}</p>
+      {% endif %}
+    </div>
+
+    {% if product %}
+    <p class="text-xs text-gray-500">{{ t.product.form.used_by_devices | replace('{count}', device_count | string) }}</p>
+    {% endif %}
+
+    <div class="flex gap-3 pt-2">
+      <button type="submit"
+              class="bg-blue-600 text-white px-5 py-2 rounded hover:bg-blue-700 text-sm font-medium">
+        {% if product %}{{ t.product.form.save_btn }}{% else %}{{ t.product.form.create_btn }}{% endif %}
+      </button>
+      <a href="{{ url('/products/' + product.id) if product else url('/products') }}"
+         class="px-5 py-2 rounded border border-gray-300 text-sm hover:bg-gray-50">
+        {{ t.product.form.cancel }}
+      </a>
+    </div>
+  </form>
+</div>
+
+<script>
+(function () {
+  window.mrAddProductLinkRow = function () {
+    var tpl = document.getElementById('mr-product-link-template');
+    var container = document.getElementById('mr-product-links');
+    var clone = tpl.content.cloneNode(true);
+    container.appendChild(clone);
+    var empty = document.getElementById('mr-product-links-empty');
+    if (empty) empty.remove();
+  };
+  window.mrRemoveProductLinkRow = function (btn) {
+    btn.closest('.mr-product-link-row').remove();
+  };
+})();
+</script>
+{% endblock %}

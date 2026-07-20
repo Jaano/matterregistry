@@ -3,7 +3,7 @@ from datetime import date, datetime
 from enum import StrEnum
 
 from sqlalchemy import JSON as SA_JSON
-from sqlalchemy import Column, LargeBinary, UniqueConstraint
+from sqlalchemy import Column, Index, LargeBinary, UniqueConstraint, text
 from sqlmodel import Field, Relationship, SQLModel
 
 
@@ -97,11 +97,6 @@ class FieldSource(StrEnum):
 SOURCED_FIELDS: tuple[str, ...] = (
     "name",
     "room",
-    "vendor",
-    "product",
-    "device_model",
-    "vendor_id",
-    "product_id",
     "serial",
     "hardware_version",
     "firmware_version",
@@ -113,6 +108,15 @@ SOURCED_FIELDS: tuple[str, ...] = (
     "status",
     "network_type",
     "mac_address",
+)
+
+PRODUCT_SOURCED_FIELDS: tuple[str, ...] = (
+    "name",
+    "vendor",
+    "model",
+    "vendor_id",
+    "product_id",
+    "description",
 )
 
 
@@ -143,19 +147,88 @@ class AttachmentKind(StrEnum):
     other = "other"
 
 
+class ProductLinkKind(StrEnum):
+    manufacturer = "manufacturer"
+    homepage = "homepage"
+    support = "support"
+    documentation = "documentation"
+    image = "image"
+    icon = "icon"
+    other = "other"
+
+
 def _now() -> datetime:
     return datetime.utcnow()
+
+
+class Product(SQLModel, table=True):
+    __table_args__ = (
+        Index(
+            "uq_product_matter_vid_pid",
+            "protocol",
+            "vendor_id",
+            "product_id",
+            unique=True,
+            sqlite_where=text(
+                "protocol = 'matter' AND vendor_id IS NOT NULL AND product_id IS NOT NULL"
+            ),
+        ),
+    )
+
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()), primary_key=True)
+    name: str
+    protocol: DeviceProtocol | None = None
+    vendor: str | None = None
+    model: str | None = None
+    vendor_id: int | None = None
+    product_id: int | None = None
+    description: str | None = None
+    created_at: datetime = Field(default_factory=_now)
+    updated_at: datetime = Field(default_factory=_now)
+
+    name_source: FieldSource = Field(default=FieldSource.generated)
+    vendor_source: FieldSource = Field(default=FieldSource.generated)
+    model_source: FieldSource = Field(default=FieldSource.generated)
+    vendor_id_source: FieldSource = Field(default=FieldSource.generated)
+    product_id_source: FieldSource = Field(default=FieldSource.generated)
+    description_source: FieldSource = Field(default=FieldSource.generated)
+
+    devices: list["Device"] = Relationship(back_populates="product_record")
+    links: list["ProductLink"] = Relationship(
+        back_populates="product",
+        sa_relationship_kwargs={"cascade": "all, delete-orphan", "lazy": "select"},
+    )
+
+    @property
+    def vid_pid_display(self) -> str | None:
+        """VID (and PID, when present) as ``0xFFF1 / 0x8001``; None when no VID."""
+        if self.vendor_id is None:
+            return None
+        text = f"0x{self.vendor_id:04X}"
+        if self.product_id:
+            text += f" / 0x{self.product_id:04X}"
+        return text
+
+
+class ProductLink(SQLModel, table=True):
+    __tablename__ = "product_link"  # type: ignore[assignment]
+
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()), primary_key=True)
+    product_record_id: str = Field(foreign_key="product.id", index=True)
+    kind: ProductLinkKind
+    url: str
+    label: str | None = None
+    alt_text: str | None = None
+    position: int = 0
+
+    product: Product | None = Relationship(back_populates="links")
 
 
 class Device(SQLModel, table=True):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()), primary_key=True)
     name: str
+    product_record_id: str = Field(foreign_key="product.id", index=True)
     room: str | None = None
-    vendor: str | None = None
-    product: str | None = None
-    device_model: str | None = None
-    vendor_id: int | None = None
-    product_id: int | None = None
     serial: str | None = None
     hardware_version: str | None = None
     firmware_version: str | None = None
@@ -170,7 +243,6 @@ class Device(SQLModel, table=True):
     warranty_until: date | None = None
     commissioned_at: datetime | None = None  # first commissioning timestamp
     status: DeviceStatus = DeviceStatus.active
-    protocol: DeviceProtocol | None = None
     # Networking - populated by Matter Server sync
     network_type: list[str] = Field(
         default_factory=list,
@@ -183,11 +255,6 @@ class Device(SQLModel, table=True):
     # Provenance flags - one per user-editable field (see FieldSource).
     name_source: FieldSource = Field(default=FieldSource.generated)
     room_source: FieldSource = Field(default=FieldSource.generated)
-    vendor_source: FieldSource = Field(default=FieldSource.generated)
-    product_source: FieldSource = Field(default=FieldSource.generated)
-    device_model_source: FieldSource = Field(default=FieldSource.generated)
-    vendor_id_source: FieldSource = Field(default=FieldSource.generated)
-    product_id_source: FieldSource = Field(default=FieldSource.generated)
     serial_source: FieldSource = Field(default=FieldSource.generated)
     hardware_version_source: FieldSource = Field(default=FieldSource.generated)
     firmware_version_source: FieldSource = Field(default=FieldSource.generated)
@@ -199,6 +266,47 @@ class Device(SQLModel, table=True):
     status_source: FieldSource = Field(default=FieldSource.generated)
     network_type_source: FieldSource = Field(default=FieldSource.generated)
     mac_address_source: FieldSource = Field(default=FieldSource.generated)
+
+    def __init__(self, **data):  # type: ignore[no-untyped-def]
+        """Create an unshared Product for legacy direct Device construction.
+
+        Services and APIs resolve a Product explicitly. This bridge keeps
+        existing imports, tests, and one-off scripts from creating a
+        Product-less Device while the persisted schema remains strict.
+        """
+        generic_fields = {
+            "protocol": data.pop("protocol", None),
+            "vendor": data.pop("vendor", None),
+            "product": data.pop("product", None),
+            "device_model": data.pop("device_model", None),
+            "vendor_id": data.pop("vendor_id", None),
+            "product_id": data.pop("product_id", None),
+        }
+        generic_sources = {
+            "vendor_source": data.pop("vendor_source", FieldSource.generated),
+            "product_source": data.pop("product_source", FieldSource.generated),
+            "device_model_source": data.pop("device_model_source", FieldSource.generated),
+            "vendor_id_source": data.pop("vendor_id_source", FieldSource.generated),
+            "product_id_source": data.pop("product_id_source", FieldSource.generated),
+        }
+        super().__init__(**data)
+        if self.product_record_id:
+            return
+        product_name = generic_fields["product"] or f"Unresolved product for {self.name}"
+        self.product_record = Product(
+            name=product_name,
+            protocol=generic_fields["protocol"],
+            vendor=generic_fields["vendor"],
+            model=generic_fields["device_model"],
+            vendor_id=generic_fields["vendor_id"],
+            product_id=generic_fields["product_id"],
+            name_source=generic_sources["product_source"],
+            vendor_source=generic_sources["vendor_source"],
+            model_source=generic_sources["device_model_source"],
+            vendor_id_source=generic_sources["vendor_id_source"],
+            product_id_source=generic_sources["product_id_source"],
+        )
+        self.product_record_id = self.product_record.id
 
     # ── Display helpers ──────────────────────────────────────────────────────
     # Formatting lives here, not in the template, which just renders the string.
@@ -212,6 +320,66 @@ class Device(SQLModel, table=True):
         if self.product_id:
             text += f" / 0x{self.product_id:04X}"
         return text
+
+    @property
+    def protocol(self) -> DeviceProtocol | None:
+        return self.product_record.protocol if self.product_record else None
+
+    @protocol.setter
+    def protocol(self, value: DeviceProtocol | None) -> None:
+        if self.product_record is None:
+            self.product_record = Product(name=f"Unresolved product for {self.name}")
+            self.product_record_id = self.product_record.id
+        self.product_record.protocol = value
+
+    @property
+    def vendor(self) -> str | None:
+        return self.product_record.vendor if self.product_record else None
+
+    @property
+    def product(self) -> str | None:
+        return self.product_record.name if self.product_record else None
+
+    @property
+    def device_model(self) -> str | None:
+        return self.product_record.model if self.product_record else None
+
+    @property
+    def vendor_id(self) -> int | None:
+        return self.product_record.vendor_id if self.product_record else None
+
+    @property
+    def product_id(self) -> int | None:
+        return self.product_record.product_id if self.product_record else None
+
+    @property
+    def vendor_source(self) -> FieldSource:
+        return self.product_record.vendor_source if self.product_record else FieldSource.generated
+
+    @property
+    def product_source(self) -> FieldSource:
+        return self.product_record.name_source if self.product_record else FieldSource.generated
+
+    @property
+    def device_model_source(self) -> FieldSource:
+        return self.product_record.model_source if self.product_record else FieldSource.generated
+
+    @property
+    def vendor_id_source(self) -> FieldSource:
+        return (
+            self.product_record.vendor_id_source if self.product_record else FieldSource.generated
+        )
+
+    @property
+    def product_id_source(self) -> FieldSource:
+        return (
+            self.product_record.product_id_source if self.product_record else FieldSource.generated
+        )
+
+    product_record: Product | None = Relationship(
+        back_populates="devices",
+        sa_relationship_kwargs={"lazy": "selectin"},
+    )
 
     properties: list["Property"] = Relationship(
         back_populates="device",

@@ -263,7 +263,7 @@ def project_discovered(
 
     from ...audit import log as audit_log
     from ...models import Device, DeviceLink, DeviceLinkSource, Property, PropertyType
-    from ...services import set_field
+    from ...services import resolve_product, set_field
     from ..data import read as read_integration_data
     from ..data import upsert as upsert_integration_data
 
@@ -272,6 +272,7 @@ def project_discovered(
     created = 0
     updated = 0
     skipped = 0
+    product_counts: dict[str, int] = {"created": 0, "updated": 0}
 
     # Existing mdns links keyed by external_id (the accessory id).
     mdns_links: dict[str, DeviceLink] = {
@@ -330,12 +331,18 @@ def project_discovered(
             if not integration.can_create_devices:
                 skipped += 1
                 continue
-            device = Device(
-                name=acc.get("name") or f"HomeKit {acc.get('model') or acc_id}",
-                name_source=FieldSource.mdns,
-                product=acc.get("model") or None,
-                product_source=FieldSource.mdns if acc.get("model") else FieldSource.generated,
+            dev_name = acc.get("name") or f"HomeKit {acc.get('model') or acc_id}"
+            product = resolve_product(
+                session,
                 protocol=DeviceProtocol.homekit,
+                name=acc.get("model") or dev_name,
+                source=FieldSource.mdns,
+                counts=product_counts,
+            )
+            device = Device(
+                name=dev_name,
+                name_source=FieldSource.mdns,
+                product_record_id=product.id,
                 homekit_accessory_id=acc_id,
                 network_type=[acc["transport"]] if acc.get("transport") else [],
                 network_type_source=FieldSource.mdns
@@ -344,6 +351,7 @@ def project_discovered(
                 created_at=now,
                 updated_at=now,
             )
+            device.product_record = product
             session.add(device)
             session.flush()
             created_new = True
@@ -440,7 +448,12 @@ def project_discovered(
     integration.assert_capabilities(session, created=created)
     audit_log(session, action="mdns.sync", entity="mdns", reason="mdns.project")
     session.commit()
-    return {"created": created, "updated": updated, "skipped": skipped}
+    return {
+        "created": created,
+        "updated": updated,
+        "skipped": skipped,
+        "product_created": product_counts["created"],
+    }
 
 
 def project_ltpdu(
@@ -464,7 +477,7 @@ def project_ltpdu(
 
     from ...audit import log as audit_log
     from ...models import Device, DeviceLink, DeviceLinkSource
-    from ...services import set_field
+    from ...services import resolve_product, set_field
     from ..correlate import AddressIndex
     from ..data import read as read_integration_data
     from ..data import upsert as upsert_integration_data
@@ -474,6 +487,7 @@ def project_ltpdu(
     created = 0
     updated = 0
     skipped = 0
+    product_counts: dict[str, int] = {"created": 0, "updated": 0}
 
     # Pre-load all mdns links.  eui64s are 16-char hex strings without colons,
     # while HAP acc_ids are MAC-form (AA:BB:…).  We key only by eui64 here for
@@ -542,17 +556,23 @@ def project_ltpdu(
                 skipped += 1
                 continue
             instance_label = rec.get("_instance_label") or eui64
+            product = resolve_product(
+                session,
+                protocol=None,
+                name=rec.get("model") or instance_label,
+                source=FieldSource.mdns,
+                counts=product_counts,
+            )
             device = Device(
                 name=instance_label,
                 name_source=FieldSource.mdns,
-                product=rec.get("model") or None,
-                product_source=FieldSource.mdns if rec.get("model") else FieldSource.generated,
-                protocol=None,
+                product_record_id=product.id,
                 network_type=["thread"],
                 network_type_source=FieldSource.mdns,
                 created_at=now,
                 updated_at=now,
             )
+            device.product_record = product
             session.add(device)
             session.flush()
             created_new = True
@@ -643,7 +663,12 @@ def project_ltpdu(
     integration.assert_capabilities(session, created=created)
     audit_log(session, action="mdns.ltpdu_sync", entity="mdns", reason="mdns.project_ltpdu")
     session.commit()
-    return {"created": created, "updated": updated, "skipped": skipped}
+    return {
+        "created": created,
+        "updated": updated,
+        "skipped": skipped,
+        "product_created": product_counts["created"],
+    }
 
 
 def project_matter(
@@ -952,8 +977,8 @@ class MdnsClient(Integration):
         ltpdu_records = self.ltpdu_discovered()
         matter_records = self.matter_discovered()
 
-        hap_result: dict = {"created": 0, "updated": 0, "skipped": 0}
-        ltpdu_result: dict = {"created": 0, "updated": 0, "skipped": 0}
+        hap_result: dict = {"created": 0, "updated": 0, "skipped": 0, "product_created": 0}
+        ltpdu_result: dict = {"created": 0, "updated": 0, "skipped": 0, "product_created": 0}
         matter_result: dict = {"created": 0, "updated": 0, "skipped": 0}
 
         with Session(engine) as db:
@@ -972,6 +997,7 @@ class MdnsClient(Integration):
                 created=hap_result["created"] + ltpdu_result["created"] + matter_result["created"],
                 updated=hap_result["updated"] + ltpdu_result["updated"] + matter_result["updated"],
                 skipped=hap_result["skipped"] + ltpdu_result["skipped"] + matter_result["skipped"],
+                product_created=hap_result["product_created"] + ltpdu_result["product_created"],
             )
         )
 

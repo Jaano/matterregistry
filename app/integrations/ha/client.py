@@ -318,7 +318,10 @@ class HACoreClient(PolledIntegration):
         result = self._sync_devices(ha_devices, reason="ha_core.project")
         return self._record_sync(
             SyncResult(
-                created=result["created"], updated=result["updated"], skipped=result["skipped"]
+                created=result["created"],
+                updated=result["updated"],
+                skipped=result["skipped"],
+                product_created=result["product_created"],
             )
         )
 
@@ -335,7 +338,7 @@ class HACoreClient(PolledIntegration):
           HomeKit device source). Serial-based dedupe prevents duplicate
           creation; stale-link re-point handles re-paired HA devices.
         """
-        from sqlmodel import Session, col, select
+        from sqlmodel import Session, col, or_, select
 
         from ...audit import log as audit_log
         from ...database import engine
@@ -346,8 +349,9 @@ class HACoreClient(PolledIntegration):
             DeviceLinkSource,
             Fabric,
             FieldSource,
+            Product,
         )
-        from ...services import set_field
+        from ...services import resolve_product, set_field
         from ..data import upsert as upsert_integration_data
         from .correlate import _is_placeholder, auto_correlate
 
@@ -358,6 +362,7 @@ class HACoreClient(PolledIntegration):
         created = 0
         updated = 0
         skipped = 0
+        product_counts: dict[str, int] = {"created": 0, "updated": 0}
 
         with Session(engine) as session:
             # Pre-compute (fabric_id_hex, node_id_int) → device_id map for Key 3.
@@ -386,9 +391,10 @@ class HACoreClient(PolledIntegration):
             # auto) still need to be considered here, otherwise HA enrichment -
             # including backfilling `protocol` itself - never runs for them.
             matter_devices = session.exec(
-                select(Device).where(
-                    (Device.protocol == DeviceProtocol.matter)  # type: ignore[operator]
-                    | col(Device.protocol).is_(None)
+                select(Device)
+                .join(Product)
+                .where(
+                    or_(Product.protocol == DeviceProtocol.matter, col(Product.protocol).is_(None))
                 )
             ).all()
             for dev in matter_devices:
@@ -451,7 +457,7 @@ class HACoreClient(PolledIntegration):
 
             # ── HomeKit: create + correlate ───────────────────────────────────
             hk_devices = session.exec(
-                select(Device).where(Device.protocol == DeviceProtocol.homekit)  # type: ignore[union-attr]
+                select(Device).join(Product).where(Product.protocol == DeviceProtocol.homekit)
             ).all()
             hk_by_serial_lower: dict[str, Device] = {}
             hk_by_accessory_id: dict[str, Device] = {}
@@ -518,15 +524,18 @@ class HACoreClient(PolledIntegration):
                         or f"HomeKit {hd.get('manufacturer', '')} {hd.get('model', '')}".strip()
                         or "HomeKit Device"
                     )
+                    product = resolve_product(
+                        session,
+                        protocol=DeviceProtocol.homekit,
+                        name=hd.get("model") or dev_name,
+                        vendor=hd.get("manufacturer") or None,
+                        source=FieldSource.ha,
+                        counts=product_counts,
+                    )
                     hk_device = Device(
                         name=dev_name,
                         name_source=FieldSource.ha,
-                        vendor=hd.get("manufacturer") or None,
-                        vendor_source=FieldSource.ha
-                        if hd.get("manufacturer")
-                        else FieldSource.generated,
-                        product=hd.get("model") or None,
-                        product_source=FieldSource.ha if hd.get("model") else FieldSource.generated,
+                        product_record_id=product.id,
                         serial=serial,
                         serial_source=FieldSource.ha if serial else FieldSource.generated,
                         room=hd.get("area_name") or None,
@@ -549,11 +558,11 @@ class HACoreClient(PolledIntegration):
                         network_type_source=FieldSource.ha
                         if hd.get("network_type")
                         else FieldSource.generated,
-                        protocol=DeviceProtocol.homekit,
                         homekit_accessory_id=accessory_id,
                         created_at=now,
                         updated_at=now,
                     )
+                    hk_device.product_record = product
                     session.add(hk_device)
                     session.flush()
                     created_new = True
@@ -648,7 +657,12 @@ class HACoreClient(PolledIntegration):
             self.assert_capabilities(session, created=created)
             session.commit()
 
-        return {"created": created, "updated": updated, "skipped": skipped}
+        return {
+            "created": created,
+            "updated": updated,
+            "skipped": skipped,
+            "product_created": product_counts["created"],
+        }
 
     def get_device_state_from_cache(self, ha_device_id: str) -> dict | None:
         """Return live-state data from the in-memory states cache (synchronous).

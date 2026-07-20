@@ -12,7 +12,6 @@ From a stored payload, Matter Registry can recreate the QR code and 11-digit man
 
 The application has no login screen. It is meant to stay on a private LAN, with access controlled by your network or Home Assistant Ingress.
 
-
 <table>
   <tr>
     <td width="50%"><img src="docs/screenshots/detail.png" alt="Device detail page"><br><sub><b>Device detail</b> - identity, the onboarding QR + 11-digit pairing code regenerated from the stored payload, install photos, and every stored property.</sub></td>
@@ -69,6 +68,7 @@ To restore it, open **Settings → Restore from backup**, choose the file, and d
 
 ## Good to know
 
+- Home Assistant, Matter Server, and OpenThread Border Router integrations are optional; when configured, compatibility baselines are Home Assistant 2026.1.1, Python Matter Server 8.0.0, and OpenThread Border Router 3.0.0, with newer capabilities used only when supported.
 - The SQLite database and JSON backups contain pairing PINs in plain text. Protect the data directory and backup files with filesystem permissions.
 - Matter Registry relies on Home Assistant Ingress or your own reverse proxy for access control. Do not expose port 5591 to the public internet.
 - Camera scanning needs HTTPS. This restriction does not affect manual entry, pasted payloads, or JSON imports.

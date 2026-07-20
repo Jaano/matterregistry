@@ -57,25 +57,21 @@
                class="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
       </div>
 
-      <div>
-        <label class="block text-sm font-medium text-gray-700 mb-1">{{ t.device.form.vendor_label }}{{ src_hint(device.vendor_source) }}</label>
-        <input type="text" name="vendor"
-               value="{{ device.vendor or '' }}"
-               class="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
-      </div>
-
-      <div>
-        <label class="block text-sm font-medium text-gray-700 mb-1">{{ t.device.form.product_label }}{{ src_hint(device.product_source) }}</label>
-        <input type="text" name="product"
-               value="{{ device.product or '' }}"
-               class="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
-      </div>
-
-      <div>
-        <label class="block text-sm font-medium text-gray-700 mb-1">{{ t.device.form.model_label }}{{ src_hint(device.device_model_source) }}</label>
-        <input type="text" name="device_model"
-               value="{{ device.device_model or '' }}"
-               class="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+      <div class="sm:col-span-2">
+        <label class="block text-sm font-medium text-gray-700 mb-1">{{ t.device.form.product_picker_label }}</label>
+        <select name="product_record_id"
+                class="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+          {% for p in products %}
+          <option value="{{ p.id }}" {% if device.product_record_id == p.id %}selected{% endif %}>
+            {{ p.vendor ~ ' - ' if p.vendor }}{{ p.name }}{{ ' (' ~ p.model ~ ')' if p.model }}
+          </option>
+          {% endfor %}
+        </select>
+        <p class="mt-1 text-xs text-gray-500">
+          <a href="{{ url('/products/' + device.product_record_id) }}" class="text-blue-600 hover:underline">{{ t.device.form.product_view_link }}</a>
+          &middot;
+          <a href="{{ url('/products/new') }}" class="text-blue-600 hover:underline">{{ t.device.form.product_new_link }}</a>
+        </p>
       </div>
 
       <div>

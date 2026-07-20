@@ -1,0 +1,20 @@
+<div class="mr-product-link-row flex flex-wrap items-start gap-2 border border-gray-200 rounded p-2">
+  <select name="link_kind" class="border border-gray-300 rounded px-2 py-1.5 text-sm">
+    {% for k in link_kinds %}
+    <option value="{{ k.value }}" {% if l and l.kind == k %}selected{% endif %}>{{ t.product.link_kind[k.value] }}</option>
+    {% endfor %}
+  </select>
+  <input type="url" name="link_url" placeholder="{{ t.product.form.link_url_label }}"
+         value="{{ l.url if l else '' }}"
+         class="flex-1 min-w-40 border border-gray-300 rounded px-2 py-1.5 text-sm">
+  <input type="text" name="link_label" placeholder="{{ t.product.form.link_label_label }}"
+         value="{{ l.label or '' if l else '' }}"
+         class="w-32 border border-gray-300 rounded px-2 py-1.5 text-sm">
+  <input type="text" name="link_alt" placeholder="{{ t.product.form.link_alt_label }}"
+         value="{{ l.alt_text or '' if l else '' }}"
+         class="w-32 border border-gray-300 rounded px-2 py-1.5 text-sm">
+  <button type="button" onclick="window.mrRemoveProductLinkRow(this)"
+          class="text-red-500 hover:text-red-700 text-sm px-2 py-1.5" aria-label="{{ t.product.form.remove_link_btn }}" title="{{ t.product.form.remove_link_btn }}">
+    ✕
+  </button>
+</div>

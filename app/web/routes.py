@@ -1,6 +1,7 @@
 import logging
 from datetime import UTC, datetime
 from pathlib import Path
+from urllib.parse import urlparse
 
 from fastapi import APIRouter, Depends, File, Form, Request, UploadFile
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
@@ -11,14 +12,19 @@ from ..audit import log as audit_log
 from ..database import get_session
 from ..i18n import T, get_t, resolve_lang
 from ..models import (
+    PRODUCT_SOURCED_FIELDS,
     Attachment,
     Device,
     DeviceFabricMembership,
     DeviceLink,
+    DeviceProtocol,
     DeviceStatus,
     Fabric,
     FieldSource,
     HADeviceRecord,
+    Product,
+    ProductLink,
+    ProductLinkKind,
     Property,
     PropertyType,
 )
@@ -26,6 +32,7 @@ from ..settings import settings as app_settings
 
 _TEMPLATES_DIR = Path(__file__).parent / "templates"
 templates = Jinja2Templates(directory=str(_TEMPLATES_DIR))
+templates.env.filters["host"] = lambda u: urlparse(u).netloc or u
 
 logger = logging.getLogger(__name__)
 
@@ -60,6 +67,17 @@ def _ctx(request: Request, **kwargs) -> dict:
     }
 
 
+def _parse_vid_pid(raw: str) -> int | None:
+    """Parse a VID/PID form field - accepts decimal or ``0x``-prefixed hex."""
+    raw = raw.strip()
+    if not raw:
+        return None
+    try:
+        return int(raw, 16) if raw.lower().startswith("0x") else int(raw, 10)
+    except ValueError:
+        return None
+
+
 # ── Devices ──────────────────────────────────────────────────────────────────
 
 
@@ -72,15 +90,16 @@ def device_list(
     vendor: str = "",
     room: str = "",
 ):
-    stmt = select(Device)
+    stmt = select(Device).join(Product)
     if q:
         pattern = f"%{q}%"
         stmt = stmt.where(
             or_(
                 Device.name.ilike(pattern),  # type: ignore[attr-defined]
                 Device.room.ilike(pattern),  # type: ignore[union-attr]
-                Device.vendor.ilike(pattern),  # type: ignore[union-attr]
-                Device.product.ilike(pattern),  # type: ignore[union-attr]
+                col(Product.vendor).ilike(pattern),
+                col(Product.name).ilike(pattern),
+                col(Product.model).ilike(pattern),
                 Device.serial.ilike(pattern),  # type: ignore[union-attr]
                 Device.notes.ilike(pattern),  # type: ignore[union-attr]
             )
@@ -90,7 +109,7 @@ def device_list(
     else:
         stmt = stmt.where(col(Device.status) != DeviceStatus.hidden)
     if vendor:
-        stmt = stmt.where(Device.vendor == vendor)
+        stmt = stmt.where(Product.vendor == vendor)
     if room:
         stmt = stmt.where(Device.room == room)
 
@@ -188,9 +207,6 @@ def device_new(request: Request):
 def device_create(
     request: Request,
     name: str = Form(...),
-    vendor: str = Form(""),
-    product: str = Form(""),
-    device_model: str = Form(""),
     room: str = Form(""),
     serial: str = Form(""),
     notes: str = Form(""),
@@ -208,11 +224,11 @@ def device_create(
             wu = date_type.fromisoformat(warranty_until.strip())
         except ValueError:
             wu = None
+    # No vendor/product/model fields here - the new-device flow is name +
+    # scan/manual tiles only (A.15). The Device.__init__ compatibility bridge
+    # gives it a placeholder Product; a subsequent scan resolves the real one.
     device = Device(
         name=name,
-        vendor=vendor or None,
-        product=product or None,
-        device_model=device_model or None,
         room=room or None,
         serial=serial or None,
         notes=notes or None,
@@ -535,10 +551,11 @@ def device_edit(id: str, request: Request, session: Session = Depends(get_sessio
     device = session.get(Device, id)
     if not device:
         return HTMLResponse("Device not found", status_code=404)
+    products = session.exec(select(Product).order_by(col(Product.name))).all()
     return templates.TemplateResponse(
         request,
         "devices/form.html",
-        _ctx(request, device=device, statuses=list(DeviceStatus)),
+        _ctx(request, device=device, statuses=list(DeviceStatus), products=products),
     )
 
 
@@ -547,9 +564,7 @@ def device_update(
     id: str,
     request: Request,
     name: str = Form(...),
-    vendor: str = Form(""),
-    product: str = Form(""),
-    device_model: str = Form(""),
+    product_record_id: str = Form(""),
     room: str = Form(""),
     serial: str = Form(""),
     notes: str = Form(""),
@@ -574,11 +589,10 @@ def device_update(
             wu = None
     # Only fields the user actually changed are stamped as user-entered -
     # otherwise the integration provenance (matter/ha/otbr/...) is preserved.
+    # Vendor/product/model are Product-owned (see A.23) - reassignment is
+    # handled separately below via product_record_id, never as Device fields.
     submitted = {
         "name": name,
-        "vendor": vendor or None,
-        "product": product or None,
-        "device_model": device_model or None,
         "room": room or None,
         "serial": serial or None,
         "notes": notes or None,
@@ -589,6 +603,11 @@ def device_update(
     for field, value in submitted.items():
         if getattr(device, field) != value:
             set_field(device, field, value, FieldSource.user)
+    if product_record_id and product_record_id != device.product_record_id:
+        new_product = session.get(Product, product_record_id)
+        if new_product is not None:
+            device.product_record_id = new_product.id
+            device.product_record = new_product
     device.updated_at = datetime.now(UTC)
     session.add(device)
     audit_log(
@@ -618,6 +637,342 @@ def device_delete(id: str, request: Request, session: Session = Depends(get_sess
     return resp
 
 
+# ── Products ─────────────────────────────────────────────────────────────────
+
+
+def _apply_product_links(
+    session: Session,
+    product_id: str,
+    kinds: list[str],
+    urls: list[str],
+    labels: list[str],
+    alts: list[str],
+) -> None:
+    """Replace a Product's links with the submitted repeatable-row formset.
+
+    Rows with a blank or non-HTTP(S) URL are dropped silently - the editor
+    never submits an empty trailing row as real data. Order is preserved.
+    """
+    existing = session.exec(
+        select(ProductLink).where(ProductLink.product_record_id == product_id)
+    ).all()
+    for link in existing:
+        session.delete(link)
+    session.flush()
+    position = 0
+    for kind, url, label, alt in zip(kinds, urls, labels, alts, strict=False):
+        url = url.strip()
+        if not url or not url.lower().startswith(("http://", "https://")):
+            continue
+        try:
+            kind_val = ProductLinkKind(kind)
+        except ValueError:
+            kind_val = ProductLinkKind.other
+        session.add(
+            ProductLink(
+                product_record_id=product_id,
+                kind=kind_val,
+                url=url,
+                label=label.strip() or None,
+                alt_text=alt.strip() or None,
+                position=position,
+            )
+        )
+        position += 1
+
+
+@router.get("/products", response_class=HTMLResponse)
+def product_list(
+    request: Request,
+    session: Session = Depends(get_session),
+    q: str = "",
+    protocol: str = "",
+    vendor: str = "",
+):
+    stmt = select(Product)
+    if q:
+        pattern = f"%{q}%"
+        stmt = stmt.where(
+            or_(
+                col(Product.name).ilike(pattern),
+                col(Product.vendor).ilike(pattern),
+                col(Product.model).ilike(pattern),
+                col(Product.description).ilike(pattern),
+            )
+        )
+    if protocol:
+        stmt = stmt.where(Product.protocol == protocol)
+    if vendor:
+        stmt = stmt.where(Product.vendor == vendor)
+    products = session.exec(stmt.order_by(col(Product.name))).all()
+
+    all_products = session.exec(select(Product)).all()
+    vendors = sorted({p.vendor for p in all_products if p.vendor})
+
+    device_counts: dict[str, int] = {}
+    if products:
+        product_ids = [p.id for p in products]
+        for pid in session.exec(
+            select(Device.product_record_id).where(col(Device.product_record_id).in_(product_ids))
+        ).all():
+            device_counts[pid] = device_counts.get(pid, 0) + 1
+
+    is_htmx = request.headers.get("HX-Request") == "true"
+    ctx = _ctx(
+        request,
+        products=products,
+        device_counts=device_counts,
+        vendors=vendors,
+        protocols=list(DeviceProtocol),
+        q=q,
+        active_protocol=protocol,
+        active_vendor=vendor,
+        any_filter=bool(q or protocol or vendor),
+    )
+    if is_htmx:
+        return templates.TemplateResponse(request, "products/_rows.html", ctx)
+    return templates.TemplateResponse(request, "products/list.html", ctx)
+
+
+@router.get("/products/new", response_class=HTMLResponse)
+def product_new(request: Request):
+    return templates.TemplateResponse(
+        request,
+        "products/form.html",
+        _ctx(
+            request,
+            product=None,
+            links=[],
+            protocols=list(DeviceProtocol),
+            link_kinds=list(ProductLinkKind),
+            device_count=0,
+        ),
+    )
+
+
+@router.post("/products")
+def product_create(
+    request: Request,
+    name: str = Form(...),
+    protocol: str = Form(""),
+    vendor: str = Form(""),
+    model: str = Form(""),
+    vendor_id: str = Form(""),
+    product_id: str = Form(""),
+    description: str = Form(""),
+    link_kind: list[str] = Form(default=[]),
+    link_url: list[str] = Form(default=[]),
+    link_label: list[str] = Form(default=[]),
+    link_alt: list[str] = Form(default=[]),
+    session: Session = Depends(get_session),
+):
+    product = Product(
+        name=name,
+        protocol=DeviceProtocol(protocol) if protocol else None,
+        vendor=vendor or None,
+        model=model or None,
+        vendor_id=_parse_vid_pid(vendor_id),
+        product_id=_parse_vid_pid(product_id),
+        description=description or None,
+    )
+    for field in PRODUCT_SOURCED_FIELDS:
+        if getattr(product, field, None) is not None:
+            setattr(product, f"{field}_source", FieldSource.user)
+    session.add(product)
+    session.flush()
+    _apply_product_links(session, product.id, link_kind, link_url, link_label, link_alt)
+    audit_log(
+        session,
+        action="product.create",
+        entity=f"product:{product.id}",
+        reason="web.product_create",
+    )
+    session.commit()
+    return RedirectResponse(_url(request, f"/products/{product.id}"), status_code=303)
+
+
+@router.get("/products/{id}", response_class=HTMLResponse)
+def product_detail(id: str, request: Request, session: Session = Depends(get_session)):
+    product = session.get(Product, id)
+    if not product:
+        return HTMLResponse("Product not found", status_code=404)
+    links = session.exec(
+        select(ProductLink)
+        .where(ProductLink.product_record_id == id)
+        .order_by(col(ProductLink.position), col(ProductLink.id))
+    ).all()
+    devices = session.exec(
+        select(Device).where(Device.product_record_id == id).order_by(col(Device.name))
+    ).all()
+    return templates.TemplateResponse(
+        request,
+        "products/detail.html",
+        _ctx(request, product=product, links=links, devices=devices, device_count=len(devices)),
+    )
+
+
+@router.get("/products/{id}/edit", response_class=HTMLResponse)
+def product_edit(id: str, request: Request, session: Session = Depends(get_session)):
+    product = session.get(Product, id)
+    if not product:
+        return HTMLResponse("Product not found", status_code=404)
+    links = session.exec(
+        select(ProductLink)
+        .where(ProductLink.product_record_id == id)
+        .order_by(col(ProductLink.position), col(ProductLink.id))
+    ).all()
+    device_count = len(session.exec(select(Device.id).where(Device.product_record_id == id)).all())
+    return templates.TemplateResponse(
+        request,
+        "products/form.html",
+        _ctx(
+            request,
+            product=product,
+            links=links,
+            protocols=list(DeviceProtocol),
+            link_kinds=list(ProductLinkKind),
+            device_count=device_count,
+        ),
+    )
+
+
+@router.post("/products/{id}")
+def product_update(
+    id: str,
+    request: Request,
+    name: str = Form(...),
+    protocol: str = Form(""),
+    vendor: str = Form(""),
+    model: str = Form(""),
+    vendor_id: str = Form(""),
+    product_id: str = Form(""),
+    description: str = Form(""),
+    link_kind: list[str] = Form(default=[]),
+    link_url: list[str] = Form(default=[]),
+    link_label: list[str] = Form(default=[]),
+    link_alt: list[str] = Form(default=[]),
+    session: Session = Depends(get_session),
+):
+    from ..services import set_product_field
+
+    product = session.get(Product, id)
+    if not product:
+        return HTMLResponse("Product not found", status_code=404)
+
+    new_protocol = DeviceProtocol(protocol) if protocol else None
+    if product.protocol != new_protocol:
+        product.protocol = new_protocol
+
+    submitted = {
+        "name": name,
+        "vendor": vendor or None,
+        "model": model or None,
+        "vendor_id": _parse_vid_pid(vendor_id),
+        "product_id": _parse_vid_pid(product_id),
+        "description": description or None,
+    }
+    for field, value in submitted.items():
+        if getattr(product, field) != value:
+            set_product_field(product, field, value, FieldSource.user)
+    product.updated_at = datetime.now(UTC)
+    session.add(product)
+    _apply_product_links(session, id, link_kind, link_url, link_label, link_alt)
+    audit_log(
+        session,
+        action="product.update",
+        entity=f"product:{id}",
+        reason="web.product_update",
+    )
+    session.commit()
+    return RedirectResponse(_url(request, f"/products/{id}"), status_code=303)
+
+
+@router.delete("/products/{id}", response_class=HTMLResponse)
+def product_delete(id: str, request: Request, session: Session = Depends(get_session)):
+    product = session.get(Product, id)
+    if not product:
+        return HTMLResponse("Product not found", status_code=404)
+    if session.exec(select(Device.id).where(Device.product_record_id == id)).first():
+        return HTMLResponse("Reassign devices before deleting this product", status_code=409)
+    audit_log(
+        session,
+        action="product.delete",
+        entity=f"product:{id}",
+        reason="web.product_delete",
+    )
+    session.delete(product)
+    session.commit()
+    resp = HTMLResponse("")
+    resp.headers["HX-Redirect"] = _url(request, "/products")
+    return resp
+
+
+# ── Product merge ────────────────────────────────────────────────────────────
+
+
+@router.get("/products/{id}/merge", response_class=HTMLResponse)
+def product_merge_get(
+    id: str,
+    request: Request,
+    session: Session = Depends(get_session),
+    target_id: str | None = None,
+):
+    from ..services import build_product_merge_preview
+
+    source = session.get(Product, id)
+    if not source:
+        return HTMLResponse("Product not found", status_code=404)
+    others = session.exec(
+        select(Product).where(Product.id != id).where(Product.protocol == source.protocol)
+    ).all()
+    target = session.get(Product, target_id) if target_id else None
+    preview = build_product_merge_preview(source, target) if target else None
+    return templates.TemplateResponse(
+        request,
+        "products/merge.html",
+        _ctx(request, source=source, others=others, target=target, preview=preview),
+    )
+
+
+@router.post("/products/{id}/merge", response_class=HTMLResponse)
+def product_merge_post(
+    id: str,
+    request: Request,
+    target_id: str = Form(...),
+    session: Session = Depends(get_session),
+):
+    from ..services import ProtocolMismatchError, build_product_merge_preview, merge_products
+
+    source = session.get(Product, id)
+    if not source:
+        return HTMLResponse("Product not found", status_code=404)
+    target = session.get(Product, target_id)
+    if not target:
+        return HTMLResponse("Target product not found", status_code=404)
+    try:
+        merge_products(session, source_id=id, target_id=target_id)
+    except ProtocolMismatchError as exc:
+        session.rollback()
+        others = session.exec(
+            select(Product).where(Product.id != id).where(Product.protocol == source.protocol)
+        ).all()
+        return templates.TemplateResponse(
+            request,
+            "products/merge.html",
+            _ctx(
+                request,
+                source=source,
+                others=others,
+                target=target,
+                preview=build_product_merge_preview(source, target),
+                error=str(exc),
+            ),
+            status_code=409,
+        )
+    session.commit()
+    return RedirectResponse(_url(request, f"/products/{target_id}"), status_code=303)
+
+
 # ── Device merge ─────────────────────────────────────────────────────────────
 
 
@@ -635,7 +990,10 @@ def device_merge_get(
         return HTMLResponse("Device not found", status_code=404)
     # Only same-protocol devices are mergeable - commissioning protocol must match.
     others = session.exec(
-        select(Device).where(Device.id != id).where(Device.protocol == source.protocol)
+        select(Device)
+        .join(Product)
+        .where(Device.id != id)
+        .where(Product.protocol == source.protocol)
     ).all()
     target = session.get(Device, target_id) if target_id else None
     preview = build_merge_preview(source, target) if target else None
@@ -666,7 +1024,10 @@ def device_merge_post(
     except ProtocolMismatchError as exc:
         session.rollback()
         others = session.exec(
-            select(Device).where(Device.id != id).where(Device.protocol == source.protocol)
+            select(Device)
+            .join(Product)
+            .where(Device.id != id)
+            .where(Product.protocol == source.protocol)
         ).all()
         return templates.TemplateResponse(
             request,

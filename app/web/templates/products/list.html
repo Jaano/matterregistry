@@ -1,0 +1,72 @@
+{% extends "base.html" %}
+{% block title %}{{ t.product.list.title }} - {{ t.nav.brand }}{% endblock %}
+{% block content %}
+
+<div class="flex items-center justify-between mb-4">
+  <h1 class="text-2xl font-bold">{{ t.product.list.title }}</h1>
+  <a href="{{ url('/products/new') }}"
+     class="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 text-sm font-medium">
+    {{ t.product.list.new_btn }}
+  </a>
+</div>
+
+<!-- Search + filters -->
+<div class="bg-white rounded shadow p-4 mb-4">
+  <div class="flex flex-wrap gap-3 items-end">
+    <div class="flex-1 min-w-48">
+      <label class="block text-xs text-gray-500 mb-1">{{ t.product.list.search_label }}</label>
+      <input
+        type="search"
+        id="search-q"
+        name="q"
+        value="{{ q }}"
+        placeholder="{{ t.product.list.search_placeholder }}"
+        class="w-full border border-gray-300 rounded px-3 py-1.5 text-sm"
+        hx-get="{{ url('/products') }}"
+        hx-trigger="keyup changed delay:300ms, search"
+        hx-target="#product-rows"
+        hx-swap="outerHTML"
+        hx-include="#filter-protocol,#filter-vendor">
+    </div>
+    <div>
+      <label class="block text-xs text-gray-500 mb-1">{{ t.product.list.protocol_label }}</label>
+      <select id="filter-protocol" name="protocol"
+              class="border border-gray-300 rounded px-2 py-1.5 text-sm"
+              hx-get="{{ url('/products') }}"
+              hx-trigger="change"
+              hx-target="#product-rows"
+              hx-swap="outerHTML"
+              hx-include="#search-q,#filter-vendor">
+        <option value="" {% if not active_protocol %}selected{% endif %}>{{ t.product.list.all_protocols }}</option>
+        {% for p in protocols %}
+        <option value="{{ p.value }}" {% if active_protocol == p.value %}selected{% endif %}>{{ p.label }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    {% if vendors %}
+    <div>
+      <label class="block text-xs text-gray-500 mb-1">{{ t.product.list.vendor_label }}</label>
+      <select id="filter-vendor" name="vendor"
+              class="border border-gray-300 rounded px-2 py-1.5 text-sm"
+              hx-get="{{ url('/products') }}"
+              hx-trigger="change"
+              hx-target="#product-rows"
+              hx-swap="outerHTML"
+              hx-include="#search-q,#filter-protocol">
+        <option value="" {% if not active_vendor %}selected{% endif %}>{{ t.product.list.all_vendors }}</option>
+        {% for v in vendors %}
+        <option value="{{ v }}" {% if active_vendor == v %}selected{% endif %}>{{ v }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    {% endif %}
+    {% if any_filter %}
+    <div>
+      <a href="{{ url('/products') }}" class="text-xs text-blue-600 hover:underline">{{ t.product.list.clear_filters }}</a>
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+{% include "products/_rows.html" %}
+{% endblock %}

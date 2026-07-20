@@ -1,0 +1,110 @@
+{% extends "base.html" %}
+{% block title %}{{ t.product.merge.title }} - {{ t.nav.brand }}{% endblock %}
+{% block content %}
+<div class="mb-6">
+  <a href="{{ url('/products/' + source.id) }}" class="text-gray-400 hover:text-gray-600 text-sm">← {{ source.name }}</a>
+  <h1 class="text-2xl font-bold mt-1">{{ t.product.merge.title }}</h1>
+  <p class="text-sm text-gray-500 mt-1">{{ t.product.merge.description }}</p>
+</div>
+
+{% if error %}
+<div class="mb-6 rounded border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-700">
+  {{ error }}
+</div>
+{% endif %}
+
+<!-- Step 1: pick target -->
+<div class="bg-white rounded shadow p-5 mb-6">
+  <h2 class="text-sm font-semibold text-gray-500 uppercase mb-3">
+    {{ t.product.merge.step1 }}
+  </h2>
+  <form method="get" action="{{ url('/products/' + source.id + '/merge') }}" class="flex gap-3 items-end flex-wrap">
+    <div class="flex-1 min-w-48">
+      <label class="block text-xs text-gray-500 mb-1">{{ t.product.merge.step1_label | replace('{name}', source.name) }}</label>
+      <select name="target_id" required
+              class="w-full border border-gray-300 rounded px-3 py-2 text-sm">
+        <option value="">{{ t.product.merge.step1_pick }}</option>
+        {% for p in others %}
+        <option value="{{ p.id }}" {% if target and target.id == p.id %}selected{% endif %}>
+          {{ p.name }}{% if p.vendor %} - {{ p.vendor }}{% endif %}
+        </option>
+        {% endfor %}
+      </select>
+    </div>
+    <button type="submit"
+            class="bg-gray-700 text-white px-4 py-2 rounded text-sm hover:bg-gray-600">
+      {{ t.product.merge.step1_btn }}
+    </button>
+  </form>
+</div>
+
+{% if target and preview %}
+<!-- Step 2: field preview -->
+<div class="bg-white rounded shadow p-5 mb-6">
+  <h2 class="text-sm font-semibold text-gray-500 uppercase mb-1">{{ t.product.merge.step2 }}</h2>
+  <p class="text-xs text-gray-400 mb-4">
+    <strong>{{ source.name }}</strong> ({{ t.product.merge.source_suffix }}) →
+    <strong>{{ target.name }}</strong> ({{ t.product.merge.target_suffix }})
+  </p>
+
+  <div class="overflow-x-auto">
+    <table class="w-full text-sm border-collapse">
+      <thead>
+        <tr class="text-xs text-gray-400 border-b border-gray-200">
+          <th class="text-left py-2 pr-4 w-36">{{ t.product.merge.col_field }}</th>
+          <th class="text-left py-2 pr-4">{{ source.name }} ({{ t.product.merge.source_suffix }})</th>
+          <th class="text-left py-2 pr-4">{{ target.name }} ({{ t.product.merge.target_suffix }})</th>
+          <th class="text-left py-2">{{ t.product.merge.col_result }}</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in preview %}
+        {% if row.source_val is not none or row.target_val is not none %}
+        <tr class="border-b border-gray-100 {% if row.conflict %}bg-yellow-50{% endif %}">
+          <td class="py-2 pr-4 text-gray-500 font-medium">{{ row.label }}</td>
+          <td class="py-2 pr-4 font-mono text-xs {% if row.winner == 'source' %}font-semibold text-gray-900{% else %}text-gray-400 line-through{% endif %}">
+            {{ row.source_val or "-" }}
+          </td>
+          <td class="py-2 pr-4 font-mono text-xs {% if row.winner == 'target' %}font-semibold text-gray-900{% else %}text-gray-400 line-through{% endif %}">
+            {{ row.target_val or "-" }}
+          </td>
+          <td class="py-2 font-mono text-xs text-gray-700">
+            {% if row.winner == 'source' %}{{ row.source_val }}
+            {% elif row.winner == 'target' %}{{ row.target_val }}
+            {% else %}-{% endif %}
+            {% if row.conflict %}
+            <span class="ml-1 text-yellow-600 text-xs font-sans">{{ t.product.merge.conflict }}</span>
+            {% endif %}
+          </td>
+        </tr>
+        {% endif %}
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <div class="mt-4 pt-3 border-t border-gray-100 text-xs text-gray-500 space-y-0.5">
+    <p>{{ t.product.merge.transfer_note | replace('{source}', source.name) | replace('{target}', target.name) }}</p>
+    <p>{{ t.product.merge.delete_note | replace('{source}', source.name) }}</p>
+  </div>
+</div>
+
+<!-- Step 3: confirm -->
+<div class="bg-white rounded shadow p-5">
+  <h2 class="text-sm font-semibold text-gray-500 uppercase mb-3">{{ t.product.merge.step3 }}</h2>
+  <form method="post" action="{{ url('/products/' + source.id + '/merge') }}">
+    <input type="hidden" name="target_id" value="{{ target.id }}">
+    <div class="flex gap-3">
+      <button type="submit"
+              class="bg-red-600 text-white px-5 py-2 rounded text-sm hover:bg-red-700">
+        {{ t.product.merge.confirm_btn | replace('{name}', source.name) }}
+      </button>
+      <a href="{{ url('/products/' + source.id) }}"
+         class="border border-gray-300 px-5 py-2 rounded text-sm hover:bg-gray-50">
+        {{ t.product.merge.cancel }}
+      </a>
+    </div>
+  </form>
+</div>
+{% endif %}
+{% endblock %}

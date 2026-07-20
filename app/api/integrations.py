@@ -114,6 +114,8 @@ async def matter_server_import_apply(request: Request):
             "create": result.created,
             "update": result.updated,
             "unchanged": result.skipped,
+            "product_create": result.product_created,
+            "product_update": result.product_updated,
         }
     }
 

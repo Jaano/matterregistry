@@ -7,6 +7,7 @@ from sqlalchemy import text
 from sqlmodel import Session, select
 
 from .models import (
+    PRODUCT_SOURCED_FIELDS,
     SOURCED_FIELDS,
     Attachment,
     Device,
@@ -14,6 +15,8 @@ from .models import (
     DeviceLink,
     Fabric,
     FieldSource,
+    Product,
+    ProductLink,
     Property,
     ThreadNetwork,
 )
@@ -37,6 +40,37 @@ def _get_schema_version(session: Session) -> str | None:
 
 def build_export(session: Session, *, app_version: str) -> dict:
     """Return the export envelope dict. Caller handles JSON serialisation."""
+    products_out = [
+        {
+            "id": product.id,
+            "name": product.name,
+            "protocol": product.protocol.value if product.protocol else None,
+            "vendor": product.vendor,
+            "model": product.model,
+            "vendor_id": product.vendor_id,
+            "product_id": product.product_id,
+            "description": product.description,
+            "created_at": _iso(product.created_at),
+            "updated_at": _iso(product.updated_at),
+            "_sources": {
+                field: getattr(product, f"{field}_source", FieldSource.generated).value
+                for field in PRODUCT_SOURCED_FIELDS
+            },
+        }
+        for product in session.exec(select(Product)).all()
+    ]
+    product_links_out = [
+        {
+            "id": link.id,
+            "product_record_id": link.product_record_id,
+            "kind": link.kind.value,
+            "url": link.url,
+            "label": link.label,
+            "alt_text": link.alt_text,
+            "position": link.position,
+        }
+        for link in session.exec(select(ProductLink)).all()
+    ]
     devices_out = []
     for device in session.exec(select(Device)).all():
         properties = session.exec(select(Property).where(Property.device_id == device.id)).all()
@@ -47,6 +81,7 @@ def build_export(session: Session, *, app_version: str) -> dict:
             {
                 "id": device.id,
                 "name": device.name,
+                "product_record_id": device.product_record_id,
                 "room": device.room,
                 "vendor": device.vendor,
                 "product": device.product,
@@ -163,10 +198,12 @@ def build_export(session: Session, *, app_version: str) -> dict:
     ]
 
     return {
-        "format_version": 8,
+        "format_version": 9,
         "app_version": app_version,
         "exported_at": datetime.now(UTC).isoformat(),
         "schema_version": _get_schema_version(session),
+        "products": products_out,
+        "product_links": product_links_out,
         "devices": devices_out,
         "fabrics": fabrics_out,
         "device_fabric_memberships": memberships_out,

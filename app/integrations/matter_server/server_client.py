@@ -691,6 +691,8 @@ class MatterServerClient(PolledIntegration):
                 created=result["create"],
                 updated=result["update"],
                 skipped=result["unchanged"],
+                product_created=result["product_create"],
+                product_updated=result["product_update"],
             )
         )
 
@@ -807,6 +809,8 @@ class MatterServerClient(PolledIntegration):
                 created=result["create"],
                 updated=result["update"],
                 skipped=result["unchanged"],
+                product_created=result["product_create"],
+                product_updated=result["product_update"],
             )
         )
 
@@ -979,10 +983,11 @@ def _apply_nodes(
         DeviceFabricMembership,
         Fabric,
         FieldSource,
+        Product,
         Property,
         PropertyType,
     )
-    from ...services import set_field
+    from ...services import resolve_product, set_field
     from ..data import upsert as upsert_integration_data
 
     CONTROLLER_LABEL = "HA Matter"
@@ -1000,6 +1005,7 @@ def _apply_nodes(
 
     now = datetime.now(UTC)
     created = updated = unchanged = 0
+    product_counts: dict[str, int] = {"created": 0, "updated": 0}
     visited_node_ids: set[int] = set()
     # (node, device_id) pairs the loop resolved - reused for B.12 below so we
     # don't re-derive the node→device match (and stay in sync with the protocol
@@ -1025,9 +1031,11 @@ def _apply_nodes(
 
         if existing is None and node.vendor_id and node.product_id and node.serial:
             existing = session.exec(
-                select(Device).where(
-                    Device.vendor_id == node.vendor_id,
-                    Device.product_id == node.product_id,
+                select(Device)
+                .join(Product)
+                .where(
+                    Product.vendor_id == node.vendor_id,
+                    Product.product_id == node.product_id,
                     Device.serial == node.serial,
                 )
             ).first()
@@ -1045,22 +1053,21 @@ def _apply_nodes(
             if node.manufacturing_date:
                 notes_parts.append(f"Manufactured: {node.manufacturing_date}")
 
+            product = resolve_product(
+                session,
+                protocol=DeviceProtocol.matter,
+                vendor_id=node.vendor_id,
+                product_id=node.product_id,
+                name=node.product_name or dev_name,
+                vendor=node.vendor_name,
+                source=FieldSource.matter,
+                counts=product_counts,
+            )
+
             dev = Device(
                 name=dev_name,
                 name_source=FieldSource.matter,
-                protocol=DeviceProtocol.matter,
-                vendor=node.vendor_name,
-                vendor_source=FieldSource.matter if node.vendor_name else FieldSource.generated,
-                product=node.product_name,
-                product_source=FieldSource.matter if node.product_name else FieldSource.generated,
-                vendor_id=node.vendor_id,
-                vendor_id_source=FieldSource.matter
-                if node.vendor_id is not None
-                else FieldSource.generated,
-                product_id=node.product_id,
-                product_id_source=FieldSource.matter
-                if node.product_id is not None
-                else FieldSource.generated,
+                product_record_id=product.id,
                 serial=node.serial,
                 serial_source=FieldSource.matter if node.serial else FieldSource.generated,
                 hardware_version=node.hardware_version_string,
@@ -1092,6 +1099,7 @@ def _apply_nodes(
                 created_at=now,
                 updated_at=now,
             )
+            dev.product_record = product
             session.add(dev)
             session.flush()
 
@@ -1126,6 +1134,29 @@ def _apply_nodes(
             device_id = dev.id
         else:
             changed = False
+            product_changed = False
+            if node.vendor_name:
+                product_changed |= set_field(
+                    existing, "vendor", node.vendor_name, FieldSource.matter
+                )
+            if node.product_name:
+                product_changed |= set_field(
+                    existing, "product", node.product_name, FieldSource.matter
+                )
+            if node.vendor_id is not None:
+                product_changed |= set_field(
+                    existing, "vendor_id", node.vendor_id, FieldSource.matter
+                )
+            if node.product_id is not None:
+                product_changed |= set_field(
+                    existing, "product_id", node.product_id, FieldSource.matter
+                )
+            if product_changed:
+                product_counts["updated"] += 1
+                if existing.product_record is not None:
+                    existing.product_record.updated_at = now
+                    session.add(existing.product_record)
+            changed |= product_changed
             if node.hardware_version_string:
                 changed |= set_field(
                     existing, "hardware_version", node.hardware_version_string, FieldSource.matter
@@ -1350,4 +1381,10 @@ def _apply_nodes(
 
     session.commit()
 
-    return {"create": created, "update": updated, "unchanged": unchanged}
+    return {
+        "create": created,
+        "update": updated,
+        "unchanged": unchanged,
+        "product_create": product_counts["created"],
+        "product_update": product_counts["updated"],
+    }

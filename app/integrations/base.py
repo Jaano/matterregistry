@@ -59,11 +59,19 @@ class DeviceAction:
 
 @dataclass
 class SyncResult:
-    """Summary returned by ``Integration.project()`` / ``sync_now()``."""
+    """Summary returned by ``Integration.project()`` / ``sync_now()``.
+
+    ``product_created``/``product_updated`` are a best-effort breakdown of
+    the Product-side effect of this sync, reported separately from the
+    ``created``/``updated`` Device counts (B.26) - not every projection path
+    threads through the counters, so treat these as a lower bound.
+    """
 
     created: int = 0
     updated: int = 0
     skipped: int = 0
+    product_created: int = 0
+    product_updated: int = 0
     warnings: list[str] = field(default_factory=list)
 
 

@@ -97,15 +97,24 @@ html.dark #qr-svg img { filter: invert(1); }
     <dl class="space-y-2 text-sm">
       <div class="flex gap-2">
         <dt class="text-gray-500 w-36 shrink-0">{{ t.device.detail.field_vendor }}</dt>
-        <dd>{{ device.vendor or "-" }}{{ src_badge(device.vendor_source) }}</dd>
+        <dd>
+          {% if device.vendor %}<a href="{{ url('/products/' + device.product_record_id) }}" class="hover:underline">{{ device.vendor }}</a>{% else %}-{% endif %}
+          {{ src_badge(device.vendor_source) }}
+        </dd>
       </div>
       <div class="flex gap-2">
         <dt class="text-gray-500 w-36 shrink-0">{{ t.device.detail.field_product }}</dt>
-        <dd>{{ device.product or "-" }}{{ src_badge(device.product_source) }}</dd>
+        <dd>
+          {% if device.product %}<a href="{{ url('/products/' + device.product_record_id) }}" class="hover:underline">{{ device.product }}</a>{% else %}-{% endif %}
+          {{ src_badge(device.product_source) }}
+        </dd>
       </div>
       <div class="flex gap-2">
         <dt class="text-gray-500 w-36 shrink-0">{{ t.device.detail.field_model }}</dt>
-        <dd>{{ device.device_model or "-" }}{{ src_badge(device.device_model_source) }}</dd>
+        <dd>
+          {% if device.device_model %}<a href="{{ url('/products/' + device.product_record_id) }}" class="hover:underline">{{ device.device_model }}</a>{% else %}-{% endif %}
+          {{ src_badge(device.device_model_source) }}
+        </dd>
       </div>
       <div class="flex gap-2">
         <dt class="text-gray-500 w-36 shrink-0">{{ t.device.detail.field_serial }}</dt>
