@@ -21,6 +21,10 @@ The application has no login screen. It is meant to stay on a private LAN, with 
     <td width="50%"><img src="docs/screenshots/new-device.png" alt="Add a device"><br><sub><b>Add a device</b> - scan a QR code with the camera or type a setup code by hand.</sub></td>
     <td width="50%"><img src="docs/screenshots/settings.png" alt="Settings page"><br><sub><b>Settings</b> - theme, language, print label format, and full-database backup / restore.</sub></td>
   </tr>
+  <tr>
+    <td width="50%"><img src="docs/screenshots/product-detail.png" alt="Product detail page"><br><sub><b>Product catalog</b> - vendor/model identity, VID/PID, links & media shared across every device of that product.</sub></td>
+    <td width="50%"></td>
+  </tr>
 </table>
 
 ## Install as a Home Assistant App
