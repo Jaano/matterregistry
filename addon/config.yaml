@@ -1,5 +1,5 @@
 name: "Matter Registry"
-version: "0.3.15"
+version: "0.3.16"
 slug: matter-registry
 description: "Registry for Matter devices."
 url: "https://github.com/Jaano/matterregistry"
