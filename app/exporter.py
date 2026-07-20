@@ -146,6 +146,9 @@ def build_export(session: Session, *, app_version: str) -> dict:
         for tn in session.exec(select(ThreadNetwork)).all()
     ]
 
+    # Skip links orphaned by a device delete that predates the I.25 cascade
+    # fix - don't perpetuate them into every future backup/restore cycle.
+    existing_device_ids = set(session.exec(select(Device.id)).all())
     device_links_out = [
         {
             "id": lnk.id,
@@ -156,6 +159,7 @@ def build_export(session: Session, *, app_version: str) -> dict:
             "linked_at": _iso(lnk.linked_at),
         }
         for lnk in session.exec(select(DeviceLink)).all()
+        if lnk.device_id in existing_device_ids
     ]
 
     return {

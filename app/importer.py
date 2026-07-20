@@ -338,6 +338,11 @@ def apply_import(session: Session, payload: dict, *, policy: str = "skip") -> Im
     for lnk in payload.get("device_links", []):
         if session.get(DeviceLink, lnk["id"]):
             continue
+        # Don't reintroduce a link orphaned before export (or a corrupt backup
+        # referencing a device that isn't in this payload) - autoflush above
+        # means devices added earlier in this same import are already visible.
+        if not session.get(Device, lnk["device_id"]):
+            continue
         session.add(
             DeviceLink(
                 id=lnk["id"],

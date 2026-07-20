@@ -45,7 +45,7 @@ class DeviceOut(BaseModel):
     purchase_date: date | None
     warranty_until: date | None
     status: DeviceStatus
-    protocol: DeviceProtocol
+    protocol: DeviceProtocol | None
     created_at: datetime
     updated_at: datetime
     ha_device_id: str | None = None

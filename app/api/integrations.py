@@ -254,11 +254,16 @@ async def ha_core_devices(request: Request, session: Session = Depends(get_sessi
         raise HTTPException(status_code=502, detail=f"HA Core fetch failed: {exc}") from exc
 
     # Exclude HA devices already linked to any MR Device row.
-    from ..models import DeviceLink
+    # Joined against Device so a DeviceLink orphaned by a device delete (no
+    # cascade at the DB level) doesn't silently blackhole an HA device from
+    # every future picker.
+    from ..models import Device, DeviceLink
 
     linked_ids: set[str] = set(
         session.exec(
-            select(DeviceLink.external_id).where(DeviceLink.integration == "ha_core")  # type: ignore[arg-type]
+            select(DeviceLink.external_id)
+            .join(Device, DeviceLink.device_id == Device.id)  # type: ignore[arg-type]
+            .where(DeviceLink.integration == "ha_core")  # type: ignore[arg-type]
         ).all()
     )
 

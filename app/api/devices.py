@@ -149,6 +149,15 @@ def update_device(id: str, data: DeviceUpdate, session: Session = Depends(get_se
 @router.delete("/{id}", status_code=204)
 def delete_device(id: str, session: Session = Depends(get_session)):
     device = _load_device(id, session)
+    # Deleting a device does not cascade at the DB level (no ON DELETE CASCADE
+    # on device_link.device_id), so links to other integrations would be left
+    # as orphans - which then silently disappear from link pickers forever
+    # since the picker only excludes by external_id, not device existence.
+    links = session.exec(
+        select(DeviceLink).where(DeviceLink.device_id == id)  # type: ignore[attr-defined]
+    ).all()
+    for link in links:
+        session.delete(link)
     audit_log(session, action="device.delete", entity=f"device:{id}", reason="api.devices.delete")
     session.delete(device)
     session.commit()

@@ -335,7 +335,7 @@ class HACoreClient(PolledIntegration):
           HomeKit device source). Serial-based dedupe prevents duplicate
           creation; stale-link re-point handles re-paired HA devices.
         """
-        from sqlmodel import Session, select
+        from sqlmodel import Session, col, select
 
         from ...audit import log as audit_log
         from ...database import engine
@@ -381,8 +381,15 @@ class HACoreClient(PolledIntegration):
             }
 
             # ── Matter: correlate-only ────────────────────────────────────────
+            # Includes protocol=None devices too: legacy/restored rows that were
+            # never scanned (I.26) or already carry an ha_core link (manual or
+            # auto) still need to be considered here, otherwise HA enrichment -
+            # including backfilling `protocol` itself - never runs for them.
             matter_devices = session.exec(
-                select(Device).where(Device.protocol == DeviceProtocol.matter)  # type: ignore[union-attr]
+                select(Device).where(
+                    (Device.protocol == DeviceProtocol.matter)  # type: ignore[operator]
+                    | col(Device.protocol).is_(None)
+                )
             ).all()
             for dev in matter_devices:
                 link = existing_links.get(dev.id)
@@ -390,6 +397,9 @@ class HACoreClient(PolledIntegration):
                     ha_dev = ha_by_id.get(link.external_id)
                     if ha_dev:
                         changed = False
+                        if dev.protocol != DeviceProtocol.matter:
+                            dev.protocol = DeviceProtocol.matter
+                            changed = True
                         changed |= set_field(
                             dev, "name", ha_dev.get("name") or None, FieldSource.ha
                         )
@@ -414,6 +424,7 @@ class HACoreClient(PolledIntegration):
                     if ha_device_id is None:
                         continue
                     ha_dev = ha_by_id.get(ha_device_id, {})
+                    dev.protocol = DeviceProtocol.matter
                     set_field(dev, "name", ha_dev.get("name") or None, FieldSource.ha)
                     set_field(dev, "room", ha_dev.get("area_name") or None, FieldSource.ha)
                     ha_uid = ha_dev.get("matter_unique_id")
@@ -459,10 +470,19 @@ class HACoreClient(PolledIntegration):
                 created_new = False
 
                 # Check existing link by HA device ID
+                stale_link_dev_id: str | None = None
                 for dev_id, link in existing_links.items():
                     if link.external_id == ha_id:
                         hk_device = session.get(Device, dev_id)
+                        if hk_device is None:
+                            stale_link_dev_id = dev_id
                         break
+
+                if stale_link_dev_id is not None:
+                    # Orphaned: the linked device was deleted since. Drop the
+                    # stale link so it doesn't block re-linking or leave a
+                    # dangling duplicate of this HA device's external_id.
+                    session.delete(existing_links.pop(stale_link_dev_id))
 
                 # HAP accessory-id dedupe - matches mDNS-discovered rows with no serial
                 if hk_device is None and accessory_id:

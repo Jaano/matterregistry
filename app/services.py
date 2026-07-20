@@ -145,6 +145,8 @@ def _apply_scan_matter_payload(session: Session, device: Device, payload_str: st
     _upsert_credential(session, device.id, PropertyType.discriminator, str(sp.discriminator))
     set_field(device, "vendor_id", sp.vendor_id, FieldSource.scanned)
     set_field(device, "product_id", sp.product_id, FieldSource.scanned)
+    # Set protocol to matter on first Matter scan (mirrors the HomeKit path below).
+    device.protocol = DeviceProtocol.matter
     session.add(device)
 
 
@@ -208,6 +210,8 @@ def _apply_scan_matter_manual_code(session: Session, device: Device, code: str) 
     _upsert_credential(session, device.id, PropertyType.setup_pin, str(pin))
     _upsert_credential(session, device.id, PropertyType.manual_code, code)
     _upsert_credential(session, device.id, PropertyType.discriminator, str(disc))
+    # Set protocol to matter on first Matter scan (mirrors the HomeKit path below).
+    device.protocol = DeviceProtocol.matter
     session.add(device)
 
 
@@ -464,4 +468,6 @@ def apply_scan_fields(
         set_field(device, "vendor_id", vid, FieldSource.scanned)
     if pid is not None:
         set_field(device, "product_id", pid, FieldSource.scanned)
+    # Set protocol to matter on first Matter scan (mirrors the HomeKit branch above).
+    device.protocol = DeviceProtocol.matter
     session.add(device)

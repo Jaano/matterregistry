@@ -303,6 +303,14 @@ def project_discovered(
         link = mdns_links.get(acc_id)
         if link:
             device = session.get(Device, link.device_id)
+            if device is None:
+                # Orphaned: the linked device was deleted since. Drop the
+                # stale link instead of silently keeping it dangling - the
+                # correlation below will create/find the right device and a
+                # fresh link for it.
+                session.delete(link)
+                del mdns_links[acc_id]
+                link = None
 
         # 2. shared homekit identity key
         if device is None:
@@ -495,6 +503,14 @@ def project_ltpdu(
         link = mdns_links_by_eui64.get(eui64)
         if link:
             device = session.get(Device, link.device_id)
+            if device is None:
+                # Orphaned: the linked device was deleted since. Drop the
+                # stale link instead of silently keeping it dangling - the
+                # correlation below will create/find the right device and a
+                # fresh link for it.
+                session.delete(link)
+                del mdns_links_by_eui64[eui64]
+                link = None
 
         # 2. HomeKit: id_is_hap and Device.homekit_accessory_id matches.
         if device is None and rec.get("id_is_hap") and rec.get("id"):

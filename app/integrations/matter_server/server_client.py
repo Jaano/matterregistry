@@ -1048,6 +1048,7 @@ def _apply_nodes(
             dev = Device(
                 name=dev_name,
                 name_source=FieldSource.matter,
+                protocol=DeviceProtocol.matter,
                 vendor=node.vendor_name,
                 vendor_source=FieldSource.matter if node.vendor_name else FieldSource.generated,
                 product=node.product_name,
