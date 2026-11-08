@@ -3,6 +3,7 @@ nav:
   devices: "डिवाइस"
   products: "उत्पाद"
   settings: "सेटिंग्स"
+  network: "नेटवर्क"
 
 index:
   tagline: "Matter डिवाइस की पेयरिंग जानकारी के लिए आउट-ऑफ़-बैंड रजिस्ट्री।"
@@ -473,3 +474,35 @@ modal:
   confirm: "पुष्टि करें"
   cancel: "रद्द करें"
   delete: "हटाएँ"
+
+network:
+  title: "नेटवर्क"
+  topology_heading: "टोपोलॉजी"
+  empty_topology: "अभी कोई टोपोलॉजी नहीं है। Matter सर्वर समर्थन करे तो सिंक के बाद यह दिखती है।"
+  collected: "एकत्र किया गया"
+  col_node: "नोड"
+  col_kind: "प्रकार"
+  col_role: "भूमिका"
+  col_network: "नेटवर्क"
+  col_address: "पता"
+  connections_heading: "लिंक"
+  col_from: "से"
+  col_to: "तक"
+  col_strength: "मज़बूती"
+  col_signal: "सिग्नल"
+  border_routers_heading: "Thread बॉर्डर राउटर (mDNS)"
+  empty_border_routers: "कोई नहीं मिला। mDNS डिस्कवरी आवश्यक है।"
+  col_device: "डिवाइस"
+  col_thread_version: "Thread"
+  commissionable_heading: "कमीशनिंग के लिए खुले (mDNS)"
+  empty_commissionable: "कोई Matter डिवाइस कमीशनिंग के लिए विज्ञापन नहीं कर रहा।"
+  col_vid_pid: "VID / PID"
+  col_discriminator: "डिस्क्रिमिनेटर"
+  col_mode: "मोड"
+
+dcl:
+  lookup_btn: "CSA DCL में खोजें"
+  hint: "इस उत्पाद का वेंडर और उत्पाद ID CSA Distributed Compliance Ledger (on.dcl.csa-iot.org) को भेजता है। क्लिक किए बिना कुछ नहीं भेजा जाता।"
+  ok: "CSA DCL से अपडेट किया गया।"
+  none: "इस वेंडर और उत्पाद ID के लिए CSA DCL में कोई प्रविष्टि नहीं है।"
+  error: "CSA DCL तक पहुँच नहीं हो सकी।"

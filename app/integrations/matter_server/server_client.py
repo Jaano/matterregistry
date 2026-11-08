@@ -1,7 +1,7 @@
 """
-Wrapper around python-matter-server's MatterClient.
+Wrapper around matter-python-client's MatterClient.
 
-All python-matter-server types are confined to this module; the rest of the app
+All matter_server client types are confined to this module; the rest of the app
 uses the project-local NodeInfo / FabricInfo dataclasses.
 """
 
@@ -12,7 +12,7 @@ import base64
 import json
 import logging
 import socket
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field, is_dataclass
 from datetime import UTC, datetime
 from enum import StrEnum
 from typing import Any
@@ -20,6 +20,7 @@ from typing import Any
 from ...models import DeviceProtocol
 from ..base import SyncResult
 from ..polled import PolledIntegration
+from .topology import find_matter_node, link_text, links_of, role_label
 
 logger = logging.getLogger(__name__)
 
@@ -372,6 +373,10 @@ class NodeInfo:
     software_version_int: int | None = None  # SoftwareVersion (int)
     # B.22a - real fabric memberships (from OperationalCredentials.Fabrics cache)
     fabrics: list[FabricInfo] = field(default_factory=list)
+    # Power Source battery facts (replacement description, designations, quantity)
+    batteries: list[dict[str, Any]] = field(default_factory=list)
+    # Bridged Node endpoints (Bridged Device Basic Information) when this node is a bridge
+    bridged: list[dict[str, Any]] = field(default_factory=list)
     # Cluster presence map: {endpoint_id: [cluster_ids]}
     endpoints: dict[int, list[int]] = field(default_factory=dict)
     # Live attribute snapshots (cluster class → instance)
@@ -390,6 +395,138 @@ class NodeInfo:
             return self._node_obj.get_cluster(endpoint, cluster_cls)
         except Exception:
             return None
+
+
+_POWER_SOURCE_CLUSTER = 47
+_BATTERY_ATTRS: dict[int, str] = {
+    19: "replacement_description",
+    20: "common_designation",
+    21: "ansi_designation",
+    22: "iec_designation",
+    25: "quantity",
+}
+# BatCommonDesignationEnum (Matter 1.5.1 §11.7.6.8)
+_BATTERY_COMMON_DESIGNATION: dict[int, str] = {
+    1: "AAA", 2: "AA", 3: "C", 4: "D", 5: "4v5", 6: "6v0", 7: "9v0", 8: "1/2 AA",
+    9: "AAAA", 10: "A", 11: "B", 12: "F", 13: "N", 14: "No6", 15: "SubC", 16: "A23",
+    17: "A27", 18: "BA5800", 19: "Duplex", 20: "4SR44", 21: "523", 22: "531",
+    23: "15v0", 24: "22v5", 25: "30v0", 26: "45v0", 27: "67v5", 28: "J",
+    29: "CR123A", 30: "CR2", 31: "2CR5", 32: "CR-P2", 33: "CR-V3", 34: "SR41",
+    35: "SR43", 36: "SR44", 37: "SR45", 38: "SR48", 39: "SR54", 40: "SR55",
+    41: "SR57", 42: "SR58", 43: "SR59", 44: "SR60", 45: "SR63", 46: "SR64",
+    47: "SR65", 48: "SR66", 49: "SR67", 50: "SR68", 51: "SR69", 52: "SR516",
+    53: "SR731", 54: "SR712", 55: "LR932", 56: "A5", 57: "A10", 58: "A13",
+    59: "A312", 60: "A675", 61: "AC41E", 62: "10180", 63: "10280", 64: "10440",
+    65: "14250", 66: "14430", 67: "14500", 68: "14650", 69: "15270", 70: "16340",
+    71: "RCR123A", 72: "17500", 73: "17670", 74: "18350", 75: "18500", 76: "18650",
+    77: "19670", 78: "25500", 79: "26650", 80: "32600",
+}  # fmt: skip
+
+
+def _extract_batteries(attrs: dict[str, Any]) -> list[dict[str, Any]]:
+    """Parse replacement-relevant battery facts from cached Power Source attributes.
+
+    Reads the server's attribute cache only. Returns one entry per endpoint that
+    reports at least one of: replacement description, common/ANSI/IEC designation,
+    or quantity. Null and unspecified values are dropped.
+    """
+    by_endpoint: dict[int, dict[str, Any]] = {}
+    for key, val in attrs.items():
+        parts = key.split("/")
+        if len(parts) != 3 or parts[1] != str(_POWER_SOURCE_CLUSTER):
+            continue
+        try:
+            endpoint, attr_id = int(parts[0]), int(parts[2])
+        except ValueError:
+            continue
+        name = _BATTERY_ATTRS.get(attr_id)
+        if name is None or val is None or isinstance(val, bool):
+            continue
+        if name in ("common_designation", "quantity"):
+            if not isinstance(val, int) or val < 1:
+                continue
+            if name == "common_designation":
+                val = _BATTERY_COMMON_DESIGNATION.get(val, f"unknown ({val})")
+        else:
+            if not isinstance(val, str) or not val.strip():
+                continue
+            val = val.strip()
+        by_endpoint.setdefault(endpoint, {})[name] = val
+    return [{"endpoint": ep, **by_endpoint[ep]} for ep in sorted(by_endpoint)]
+
+
+_BRIDGED_CLUSTER = 57
+_BRIDGED_ATTRS: dict[int, str] = {
+    1: "vendor_name",
+    2: "vendor_id",
+    3: "product_name",
+    4: "product_id",
+    5: "node_label",
+    8: "hardware_version_string",
+    10: "firmware_version_string",
+    11: "manufacturing_date",
+    12: "part_number",
+    13: "product_url",
+    14: "product_label",
+    15: "serial",
+    17: "reachable",
+    18: "unique_id",
+}
+_BRIDGED_INT_ATTRS = {"vendor_id", "product_id"}
+# A bridged endpoint is only worth a Device when it identifies itself in some way.
+_BRIDGED_IDENTITY = ("unique_id", "product_name", "node_label", "serial", "vendor_name")
+BRIDGE_LINK = "matter_bridge"
+
+
+def _extract_bridged(attrs: dict[str, Any]) -> list[dict[str, Any]]:
+    """Parse Bridged Device Basic Information (cluster 0x0039) from cached attributes.
+
+    One entry per non-root endpoint that carries the cluster and identifies itself.
+    Null and blank values are dropped. Reads the server's attribute cache only.
+    """
+    by_endpoint: dict[int, dict[str, Any]] = {}
+    for key, val in attrs.items():
+        parts = key.split("/")
+        if len(parts) != 3 or parts[1] != str(_BRIDGED_CLUSTER):
+            continue
+        try:
+            endpoint, attr_id = int(parts[0]), int(parts[2])
+        except ValueError:
+            continue
+        name = _BRIDGED_ATTRS.get(attr_id)
+        if endpoint == 0 or name is None or val is None:
+            continue
+        if name == "reachable":
+            if isinstance(val, bool):
+                by_endpoint.setdefault(endpoint, {})[name] = val
+        elif name in _BRIDGED_INT_ATTRS:
+            if isinstance(val, int) and not isinstance(val, bool) and val > 0:
+                by_endpoint.setdefault(endpoint, {})[name] = val
+        elif isinstance(val, str) and val.strip():
+            by_endpoint.setdefault(endpoint, {})[name] = val.strip()
+    return [
+        {"endpoint": ep, **by_endpoint[ep]}
+        for ep in sorted(by_endpoint)
+        if any(k in by_endpoint[ep] for k in _BRIDGED_IDENTITY)
+    ]
+
+
+def battery_summary(battery: dict[str, Any]) -> str:
+    """One-line, human-readable description of a battery entry from _extract_batteries."""
+    parts: list[str] = []
+    designation = battery.get("common_designation")
+    quantity = battery.get("quantity")
+    if designation:
+        parts.append(f"{quantity}x {designation}" if quantity else str(designation))
+    elif quantity:
+        parts.append(f"{quantity}x")
+    if battery.get("iec_designation"):
+        parts.append(f"IEC {battery['iec_designation']}")
+    if battery.get("ansi_designation"):
+        parts.append(f"ANSI {battery['ansi_designation']}")
+    if battery.get("replacement_description"):
+        parts.append(str(battery["replacement_description"]))
+    return f"ep {battery.get('endpoint', 0)}: " + ", ".join(parts)
 
 
 def _extract_node_info(node: Any) -> NodeInfo:
@@ -477,6 +614,18 @@ def _extract_node_info(node: Any) -> NodeInfo:
     except Exception:
         pass
 
+    batteries: list[dict[str, Any]] = []
+    try:
+        batteries = _extract_batteries(getattr(nd, "attributes", None) or {})
+    except Exception:
+        pass
+
+    bridged: list[dict[str, Any]] = []
+    try:
+        bridged = _extract_bridged(getattr(nd, "attributes", None) or {})
+    except Exception:
+        pass
+
     return NodeInfo(
         node_id=node.node_id,
         available=node.available,
@@ -500,6 +649,8 @@ def _extract_node_info(node: Any) -> NodeInfo:
         software_version_int=software_version_int,
         product_appearance=product_appearance,
         fabrics=fabrics,
+        batteries=batteries,
+        bridged=bridged,
         endpoints=endpoints,
         _node_obj=node,
         ip_addresses=ip_addresses,
@@ -522,6 +673,91 @@ def _node_network_fields(node: Any) -> dict[str, Any]:
         }
     except Exception:
         return {"network_type": [], "mac_address": None, "network_info": None}
+
+
+DEFAULT_CONTROLLER_LABEL = "HA Matter"
+
+
+async def _read_fabric_label(mc: Any) -> str | None:
+    """Read the server's effective fabric label (WS schema 12); None when unset.
+
+    Reads server metadata only, never a device. Newer clients expose a typed
+    ``get_fabric_label``; older ones need the raw command.
+    """
+    getter = getattr(mc, "get_fabric_label", None)
+    if getter is not None:
+        result = await getter()
+    else:
+        result = await mc.send_command("get_fabric_label", require_schema=12)
+    if isinstance(result, dict):
+        result = result.get("fabric_label")
+    if isinstance(result, str) and result.strip():
+        return result.strip()
+    return None
+
+
+TOPOLOGY_SCHEMA = 13
+TOPOLOGY_ROW_ID = "matter_server"
+
+
+def _store_topology(data: dict[str, Any]) -> None:
+    """Replace the stored topology snapshot with *data*."""
+    from sqlmodel import Session
+
+    from ...database import engine
+    from ...models import MatterTopologySnapshot
+
+    with Session(engine) as session:
+        row = session.get(MatterTopologySnapshot, TOPOLOGY_ROW_ID) or MatterTopologySnapshot(
+            id=TOPOLOGY_ROW_ID
+        )
+        collected = data.get("collected_at")
+        row.collected_at = str(collected) if collected is not None else None
+        row.payload_json = json.dumps(data, default=str)
+        row.updated_at = datetime.now(UTC)
+        session.add(row)
+        session.commit()
+
+
+def load_topology(session: Any) -> dict[str, Any] | None:
+    """Return the stored topology graph, or None when absent or empty."""
+    from ...models import MatterTopologySnapshot
+
+    row = session.get(MatterTopologySnapshot, TOPOLOGY_ROW_ID)
+    if row is None:
+        return None
+    try:
+        data = json.loads(row.payload_json)
+    except ValueError:
+        return None
+    return data if isinstance(data, dict) and data.get("nodes") else None
+
+
+def _mesh_payload(
+    topology: dict[str, Any] | None, node_id: int, name_for_node: Any
+) -> dict[str, Any]:
+    """Integration-data fields describing where a node sits in the mesh."""
+    if not topology:
+        return {}
+    node = find_matter_node(topology, node_id)
+    if node is None:
+        return {}
+    fields = {
+        "network_role": role_label(node.get("role")),
+        "thread_network": node.get("network_name"),
+        "thread_ext_pan_id": node.get("ext_pan_id"),
+        "network_peers": [link_text(lk) for lk in links_of(topology, node, name_for_node)],
+    }
+    return {k: v for k, v in fields.items() if v not in (None, "")}
+
+
+def _schema_version_of(mc: Any) -> int | None:
+    """Return the server's WS schema_version, or None when it is not reported."""
+    try:
+        raw = getattr(getattr(mc, "server_info", None), "schema_version", None)
+        return int(raw) if raw is not None else None
+    except (TypeError, ValueError):
+        return None
 
 
 class MatterServerClient(PolledIntegration):
@@ -551,9 +787,50 @@ class MatterServerClient(PolledIntegration):
         self._status = ClientStatus.disconnected
         self._nodes: dict[int, NodeInfo] = {}
         self._mc: Any = None  # live MatterClient; set while connected
+        self._schema_version: int | None = None  # server_info.schema_version while connected
+        self._fabric_label: str | None = None  # server's effective fabric label (schema >= 12)
+
+    @property
+    def schema_version(self) -> int | None:
+        return self._schema_version
+
+    @property
+    def fabric_label(self) -> str | None:
+        return self._fabric_label
+
+    def supports_schema(self, minimum: int) -> bool:
+        """True when the connected server reports a WS schema >= *minimum*.
+
+        Gate every matter.js-only command or view on this; never assume a schema.
+        """
+        return self._schema_version is not None and self._schema_version >= minimum
 
     def _on_stopped(self) -> None:
         self._status = ClientStatus.disconnected
+        self._schema_version = None
+        self._fabric_label = None
+
+    async def _refresh_topology(self) -> None:
+        """Store the server's cached network topology (schema 13).
+
+        Reads the server's own cache (never ``refresh=True``, which would query
+        every node), so it is safe on the sync path. Needs the typed client method.
+        """
+        mc = self._mc
+        getter = getattr(mc, "get_network_topology", None)
+        if mc is None or getter is None or not self.supports_schema(TOPOLOGY_SCHEMA):
+            return
+        try:
+            topology = await getter()
+            data = (
+                asdict(topology)
+                if is_dataclass(topology) and not isinstance(topology, type)
+                else topology
+            )
+            if isinstance(data, dict):
+                _store_topology(data)
+        except Exception as exc:
+            logger.debug("Matter Server topology unavailable: %s", exc)
 
     async def _poll_once(self) -> None:
         # _run_loop is overridden for the WS reconnect pattern; _poll_once is never called.
@@ -615,6 +892,8 @@ class MatterServerClient(PolledIntegration):
         if not self._nodes:
             return
 
+        await self._refresh_topology()
+
         from sqlmodel import Session, select
 
         from ...database import engine
@@ -663,6 +942,8 @@ class MatterServerClient(PolledIntegration):
                 record.spec_version_int = node.spec_version_int
                 record.hardware_version_int = node.hardware_version_int
                 record.software_version_int = node.software_version_int
+                record.batteries_json = json.dumps(node.batteries) if node.batteries else None
+                record.bridged_json = json.dumps(node.bridged) if node.bridged else None
                 record.last_synced = now
                 session.add(record)
             # Remove records for nodes no longer in the WS cache
@@ -797,6 +1078,7 @@ class MatterServerClient(PolledIntegration):
         """
         if self._status != ClientStatus.connected or not self._nodes:
             return SyncResult()
+        await self._refresh_topology()
         nodes = list(self._nodes.values())
         from sqlmodel import Session
 
@@ -877,7 +1159,17 @@ class MatterServerClient(PolledIntegration):
             self._status = ClientStatus.connected
             self._error_msg = None
             self._mc = mc
-            logger.debug("Matter Server connected; %d node(s) loaded", len(self._nodes))
+            self._schema_version = _schema_version_of(mc)
+            logger.debug(
+                "Matter Server connected; %d node(s) loaded (schema %s)",
+                len(self._nodes),
+                self._schema_version,
+            )
+            if self.supports_schema(12):
+                try:
+                    self._fabric_label = await _read_fabric_label(mc)
+                except Exception as exc:
+                    logger.debug("Matter Server fabric label unavailable: %s", exc)
 
             # Subscribe to node changes so the cache stays fresh
             def _on_event(event_type: Any, data: Any) -> None:
@@ -902,6 +1194,8 @@ class MatterServerClient(PolledIntegration):
                 if not listen_task.done():
                     listen_task.cancel()
                 self._mc = None
+                self._schema_version = None
+                self._fabric_label = None
                 self._status = ClientStatus.disconnected
 
 
@@ -929,6 +1223,20 @@ def _node_info_from_record(record: Any) -> NodeInfo:
     except Exception:
         pass
 
+    batteries: list[dict[str, Any]] = []
+    try:
+        if record.batteries_json:
+            batteries = json.loads(record.batteries_json)
+    except Exception:
+        pass
+
+    bridged: list[dict[str, Any]] = []
+    try:
+        if record.bridged_json:
+            bridged = json.loads(record.bridged_json)
+    except Exception:
+        pass
+
     return NodeInfo(
         node_id=record.node_id,
         available=record.available,
@@ -951,11 +1259,151 @@ def _node_info_from_record(record: Any) -> NodeInfo:
         hardware_version_int=record.hardware_version_int,
         software_version_int=record.software_version_int,
         product_appearance=product_appearance,
+        batteries=batteries,
+        bridged=bridged,
         network_type=json.loads(record.network_type_json),
         mac_address=record.mac_address,
         ip_addresses=json.loads(record.ip_addresses_json),
         endpoints={int(k): v for k, v in json.loads(record.endpoint_json).items()},
     )
+
+
+def _project_bridged(
+    session: Any,
+    matched_pairs: list[tuple[NodeInfo, str]],
+    integration: PolledIntegration | None,
+    product_counts: dict[str, int],
+    now: datetime,
+) -> tuple[int, int]:
+    """Project each Bridged Node endpoint as its own Device linked to its bridge.
+
+    Identity is the bridged ``UniqueID`` (else bridge node + endpoint). Bridged
+    devices get no fabric membership: that is keyed on node ID, which they share
+    with the bridge. Returns ``(created, updated)``.
+    """
+    from sqlmodel import select
+
+    from ...audit import log as audit_log
+    from ...models import Device, DeviceLink, DeviceLinkSource, FieldSource
+    from ...services import resolve_product, set_field
+    from ..data import upsert as upsert_integration_data
+
+    created = updated = 0
+    for node, bridge_device_id in matched_pairs:
+        if not node.bridged:
+            continue
+        bridge_device = session.get(Device, bridge_device_id)
+        for item in node.bridged:
+            identity = item.get("unique_id") or f"bridge:{node.node_id}:{item['endpoint']}"
+            existing = session.exec(
+                select(Device).where(Device.matter_unique_id == identity)
+            ).first()
+            if (
+                existing is not None
+                and integration is not None
+                and existing.protocol not in integration.supported_protocols
+            ):
+                continue
+            display = (
+                item.get("node_label")
+                or item.get("product_name")
+                or f"Bridged device (endpoint {item['endpoint']})"
+            )
+            if existing is None:
+                product = resolve_product(
+                    session,
+                    protocol=DeviceProtocol.matter,
+                    vendor_id=item.get("vendor_id"),
+                    product_id=item.get("product_id"),
+                    name=item.get("product_name") or display,
+                    vendor=item.get("vendor_name"),
+                    source=FieldSource.matter,
+                    counts=product_counts,
+                )
+                device = Device(
+                    name=display,
+                    name_source=FieldSource.matter,
+                    product_record_id=product.id,
+                    serial=item.get("serial"),
+                    serial_source=FieldSource.matter
+                    if item.get("serial")
+                    else FieldSource.generated,
+                    hardware_version=item.get("hardware_version_string"),
+                    hardware_version_source=FieldSource.matter
+                    if item.get("hardware_version_string")
+                    else FieldSource.generated,
+                    firmware_version=item.get("firmware_version_string"),
+                    firmware_version_source=FieldSource.matter
+                    if item.get("firmware_version_string")
+                    else FieldSource.generated,
+                    matter_unique_id=identity,
+                    matter_unique_id_source=FieldSource.matter,
+                    created_at=now,
+                    updated_at=now,
+                )
+                device.product_record = product
+                session.add(device)
+                session.flush()
+                audit_log(
+                    session,
+                    action="matter_server.import",
+                    entity=f"device:{device.id}",
+                    reason=f"matter_server:bridged:{node.node_id}:{item['endpoint']}",
+                )
+                created += 1
+            else:
+                device = existing
+                changed = False
+                for field_name, key in (
+                    ("vendor", "vendor_name"),
+                    ("product", "product_name"),
+                    ("vendor_id", "vendor_id"),
+                    ("product_id", "product_id"),
+                ):
+                    if item.get(key) is not None:
+                        changed |= set_field(device, field_name, item[key], FieldSource.matter)
+                for field_name, key in (
+                    ("hardware_version", "hardware_version_string"),
+                    ("firmware_version", "firmware_version_string"),
+                ):
+                    if item.get(key):
+                        changed |= set_field(device, field_name, item[key], FieldSource.matter)
+                if changed:
+                    device.updated_at = now
+                    session.add(device)
+                    updated += 1
+
+            link = session.exec(
+                select(DeviceLink).where(
+                    DeviceLink.device_id == device.id,
+                    DeviceLink.integration == BRIDGE_LINK,
+                )
+            ).first()
+            if link is None:
+                session.add(
+                    DeviceLink(
+                        device_id=device.id,
+                        integration=BRIDGE_LINK,
+                        external_id=bridge_device_id,
+                        link_source=DeviceLinkSource.auto,
+                    )
+                )
+            elif link.external_id != bridge_device_id:
+                link.external_id = bridge_device_id
+                session.add(link)
+
+            payload = {
+                "bridge_node_id": node.node_id,
+                "bridge_device": bridge_device.name if bridge_device else None,
+                "bridge_endpoint": item["endpoint"],
+                "reachable": item.get("reachable"),
+                **{k: v for k, v in item.items() if k not in ("endpoint", "reachable")},
+                "source": "matter_server",
+            }
+            upsert_integration_data(
+                session, device_id=device.id, integration="matter_server", payload=payload
+            )
+    return created, updated
 
 
 def _apply_nodes(
@@ -990,18 +1438,22 @@ def _apply_nodes(
     from ...services import resolve_product, set_field
     from ..data import upsert as upsert_integration_data
 
-    CONTROLLER_LABEL = "HA Matter"
+    controller_label = getattr(integration, "fabric_label", None) or DEFAULT_CONTROLLER_LABEL
     UNKNOWN_FABRIC_HEX = "0000000000000000"
 
     fab_row = session.exec(select(Fabric).where(Fabric.fabric_id == UNKNOWN_FABRIC_HEX)).first()
     if fab_row is None:
         fab_row = Fabric(
             fabric_id=UNKNOWN_FABRIC_HEX,
-            controller=CONTROLLER_LABEL,
-            fabric_label=CONTROLLER_LABEL,
+            controller=controller_label,
+            fabric_label=controller_label,
         )
         session.add(fab_row)
         session.flush()
+    elif fab_row.controller != controller_label:
+        fab_row.controller = controller_label
+        fab_row.fabric_label = controller_label
+        session.add(fab_row)
 
     now = datetime.now(UTC)
     created = updated = unchanged = 0
@@ -1196,7 +1648,8 @@ def _apply_nodes(
             if _real_fab is None:
                 _real_fab = Fabric(
                     fabric_id=_hex_id,
-                    controller=fi.fabric_label or _hex_id,
+                    controller=fi.fabric_label
+                    or (controller_label if fi.vendor_id == _HA_VENDOR_ID else _hex_id),
                     fabric_label=fi.fabric_label,
                     vendor_id=fi.vendor_id,
                     vendor_name=fi.vendor_name,
@@ -1299,6 +1752,12 @@ def _apply_nodes(
         visited_node_ids.add(node.node_id)
         matched_pairs.append((node, device_id))
 
+    bridged_created, bridged_updated = _project_bridged(
+        session, matched_pairs, integration, product_counts, now
+    )
+    created += bridged_created
+    updated += bridged_updated
+
     # Sweep stale memberships across all fabrics (nodes gone from WS cache)
     stale_mems = session.exec(
         select(DeviceFabricMembership).where(
@@ -1333,6 +1792,12 @@ def _apply_nodes(
         integration.assert_capabilities(session, created=created)
 
     # ── B.12: write per-device integration data for each matched node ──
+    topology = load_topology(session)
+    device_names: dict[int, str] = {}
+    for matched_node, matched_device_id in matched_pairs:
+        matched_device = session.get(Device, matched_device_id)
+        if matched_device is not None:
+            device_names[matched_node.node_id] = matched_device.name
     # Reuses the (node, device_id) pairs the main loop already resolved.
     for node, device_id in matched_pairs:
         upsert_integration_data(
@@ -1364,6 +1829,8 @@ def _apply_nodes(
                 "hardware_version_int": node.hardware_version_int,
                 "software_version_int": node.software_version_int,
                 "product_appearance": node.product_appearance,
+                "batteries": [battery_summary(b) for b in node.batteries],
+                **_mesh_payload(topology, node.node_id, device_names.get),
                 # B.22a - fabric list from OperationalCredentials.Fabrics cache
                 "fabrics": [
                     {

@@ -48,7 +48,7 @@
     <strong>{{ last_sync.updated }}</strong> {{ t.settings.integrations.last_sync_updated }}
     <strong>{{ last_sync.skipped }}</strong> {{ t.settings.integrations.last_sync_unchanged }}
     {% if last_synced_at %}
-    <span class="text-gray-400 ml-1">{{ t.settings.integrations.last_sync_at }} {{ last_synced_at.strftime('%H:%M:%S') }}</span>
+    <span class="text-gray-400 ml-1">{{ t.settings.integrations.last_sync_at }} {{ last_synced_at | localtime('%H:%M:%S') }}</span>
     {% endif %}
   </div>
 {% endif %}

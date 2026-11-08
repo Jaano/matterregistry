@@ -30,13 +30,23 @@ _POLL_INTERVAL = 600  # kept as module constant for the docstring; base owns the
 
 # Single unified template fetches all devices with their full metadata.
 # Protocol is derived Python-side from identifiers.
+# Devices are found through their entities; a parent whose entities all live on child
+# devices (HA 2026.9+) is added explicitly. Older HA has no parent_device_id, so
+# device_attr returns None there and the list is unchanged.
 _REGISTRY_TEMPLATE = (
-    "{%- set seen = namespace(ids=[]) -%}"
-    "{%- set out = namespace(items=[]) -%}"
+    "{%- set ids = namespace(v=[]) -%}"
     "{%- for s in states -%}"
     "{%- set did = device_id(s.entity_id) -%}"
-    "{%- if did and did not in seen.ids -%}"
-    "{%- set seen.ids = seen.ids + [did] -%}"
+    "{%- if did and did not in ids.v -%}"
+    "{%- set ids.v = ids.v + [did] -%}"
+    "{%- endif -%}"
+    "{%- set pid = device_attr(did,'parent_device_id') if did else none -%}"
+    "{%- if pid and pid not in ids.v -%}"
+    "{%- set ids.v = ids.v + [pid] -%}"
+    "{%- endif -%}"
+    "{%- endfor -%}"
+    "{%- set out = namespace(items=[]) -%}"
+    "{%- for did in ids.v -%}"
     "{%- set out.items = out.items + [{"
     "'id': did,"
     "'name': (device_attr(did,'name_by_user') or device_attr(did,'name') or ''),"
@@ -49,7 +59,6 @@ _REGISTRY_TEMPLATE = (
     "'sw_version': (device_attr(did,'sw_version') or ''),"
     "'hw_version': (device_attr(did,'hw_version') or '')"
     "}] -%}"
-    "{%- endif -%}"
     "{%- endfor -%}"
     "{{ out.items | to_json }}"
 )

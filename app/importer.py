@@ -5,7 +5,7 @@ import copy
 import hashlib
 import uuid
 from dataclasses import dataclass, field
-from datetime import date, datetime
+from datetime import UTC, date, datetime
 
 from sqlalchemy import text
 from sqlmodel import Session, select
@@ -280,9 +280,11 @@ def _parse_dt(s: str | None) -> datetime | None:
     if not s:
         return None
     try:
-        return datetime.fromisoformat(s)
+        dt = datetime.fromisoformat(s)
     except ValueError:
         return None
+    # Older backups may carry naive timestamps; they were always UTC.
+    return dt.replace(tzinfo=UTC) if dt.tzinfo is None else dt
 
 
 def apply_import(session: Session, payload: dict, *, policy: str = "skip") -> ImportPlan:
@@ -465,7 +467,7 @@ def apply_import(session: Session, payload: dict, *, policy: str = "skip") -> Im
                 integration=lnk["integration"],
                 external_id=lnk["external_id"],
                 link_source=DeviceLinkSource(lnk.get("link_source", "auto")),
-                linked_at=_parse_dt(lnk.get("linked_at")) or datetime.utcnow(),
+                linked_at=_parse_dt(lnk.get("linked_at")) or datetime.now(UTC),
             )
         )
     # ── Fabric ───────────────────────────────────────────────────────────────

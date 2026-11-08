@@ -18,7 +18,13 @@ from .homekit import (
 from .homekit import (
     validate_manual_code as validate_homekit_manual_code,
 )
-from .matter import compute_manual_code, decode_setup_payload, verify_manual_code
+from .matter import (
+    compute_manual_code,
+    decode_manual_code,
+    decode_setup_payload,
+    decode_tlv_extension,
+    discovery_capabilities_label,
+)
 from .models import (
     PRODUCT_SOURCED_FIELDS,
     SOURCED_FIELDS,
@@ -252,6 +258,9 @@ def _apply_scan_matter_payload(session: Session, device: Device, payload_str: st
     )
     device.product_record_id = product.id
     device.product_record = product
+    tlv = decode_tlv_extension(sp.tlv_extension)
+    if tlv is not None and tlv.serial_number and not device.serial:
+        set_field(device, "serial", tlv.serial_number, FieldSource.scanned)
     session.add(device)
 
 
@@ -282,7 +291,8 @@ def apply_scan_manual_code(
 ) -> None:
     """Store credentials extracted from a manual setup code.
 
-    For Matter: 11-digit code with Verhoeff check digit.
+    For Matter: 11-digit code, or 21-digit code that also carries VID and PID,
+    both with a Verhoeff check digit.
     For HomeKit: 8-digit code (no checksum).
     When *protocol* is given, it is used; otherwise detected from code length.
     """
@@ -290,34 +300,40 @@ def apply_scan_manual_code(
     if protocol == "homekit" or (protocol is None and len(code) == 8):
         _ensure_protocol_match(device, DeviceProtocol.homekit, session)
         _apply_scan_homekit_manual_code(session, device, code)
-    elif protocol == "matter" or (protocol is None and len(code) == 11):
+    elif protocol == "matter" or (protocol is None and len(code) in (11, 21)):
         _ensure_protocol_match(device, DeviceProtocol.matter, session)
         _apply_scan_matter_manual_code(session, device, code)
     else:
         raise ValueError(
-            f"Unrecognised manual code length: {len(code)} - expected 8 (HomeKit) or 11 (Matter)"
+            f"Unrecognised manual code length: {len(code)} - expected 8 (HomeKit) or 11/21 (Matter)"
         )
 
 
 def _apply_scan_matter_manual_code(session: Session, device: Device, code: str) -> None:
-    """Store credentials extracted from an 11-digit Matter manual code.
+    """Store credentials extracted from an 11- or 21-digit Matter manual code.
 
     Reverses compute_manual_code(): recovers the 4-bit short discriminator
     (bits 8-11 of the original 12-bit discriminator - bits 0-7 are lost) and
-    the full 27-bit passcode.
+    the full 27-bit passcode. A 21-digit code also yields VID and PID, which
+    go to the Product; the stored manual code is always the 11-digit form.
     """
-    if not verify_manual_code(code):
-        raise ValueError("Invalid manual code (Verhoeff check failed)")
-    chunk1 = int(code[0])
-    chunk2 = int(code[1:6])
-    chunk3 = int(code[6:10])
-    short_disc_4bit = ((chunk1 & 0x3) << 2) | ((chunk2 >> 14) & 0x3)
-    pin = (chunk2 & 0x3FFF) | (chunk3 << 14)
-    disc = short_disc_4bit << 8  # low 8 bits unrecoverable from manual code
-    _upsert_credential(session, device.id, PropertyType.setup_pin, str(pin))
-    _upsert_credential(session, device.id, PropertyType.manual_code, code)
+    mc = decode_manual_code(code)
+    disc = mc.short_discriminator << 8  # low 8 bits unrecoverable from manual code
+    _upsert_credential(session, device.id, PropertyType.setup_pin, str(mc.passcode))
+    _upsert_credential(
+        session, device.id, PropertyType.manual_code, compute_manual_code(mc.passcode, disc)
+    )
     _upsert_credential(session, device.id, PropertyType.discriminator, str(disc))
-    if device.product_record is None or device.product_record.protocol is None:
+    if mc.vendor_id is not None and mc.product_id is not None:
+        product = resolve_product(
+            session,
+            protocol=DeviceProtocol.matter,
+            vendor_id=mc.vendor_id,
+            product_id=mc.product_id,
+        )
+        device.product_record_id = product.id
+        device.product_record = product
+    elif device.product_record is None or device.product_record.protocol is None:
         product = resolve_product(session, protocol=DeviceProtocol.matter)
         device.product_record_id = product.id
         device.product_record = product
@@ -375,15 +391,7 @@ def compute_onboarding_display(device: Device, properties: list[Property]) -> di
                 mt_flow_label = {0: "Standard", 1: "User Action Required", 2: "Custom"}.get(
                     mt_sp.custom_flow, str(mt_sp.custom_flow)
                 )
-                caps = mt_sp.discovery_capabilities
-                parts = []
-                if caps & 0x01:
-                    parts.append("SoftAP")
-                if caps & 0x02:
-                    parts.append("BLE")
-                if caps & 0x04:
-                    parts.append("On Network")
-                mt_disc_label = ", ".join(parts) if parts else f"0x{caps:02X}"
+                mt_disc_label = discovery_capabilities_label(mt_sp.discovery_capabilities)
             except Exception:
                 pass
     return {

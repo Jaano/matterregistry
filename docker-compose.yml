@@ -14,6 +14,7 @@ services:
     volumes:
       - ./data:/config
     environment:
+      - TZ=${TZ:-UTC} # timezone for displayed times, e.g. Europe/Berlin
       - MR_LOG_LEVEL=info # trace|debug|info|warning|error|critical
       - PYTHON_MATTER_SERVER=${PYTHON_MATTER_SERVER:-}
       - OTBR_URL=${OTBR_URL:-}

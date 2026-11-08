@@ -3,6 +3,7 @@ nav:
   devices: "设备"
   products: "产品"
   settings: "设置"
+  network: "网络"
 
 index:
   tagline: "用于保存 Matter 设备配对信息的带外注册表。"
@@ -473,3 +474,35 @@ modal:
   confirm: "确认"
   cancel: "取消"
   delete: "删除"
+
+network:
+  title: "网络"
+  topology_heading: "拓扑"
+  empty_topology: "暂无拓扑。若 Matter 服务器支持，同步后会显示。"
+  collected: "采集时间"
+  col_node: "节点"
+  col_kind: "类型"
+  col_role: "角色"
+  col_network: "网络"
+  col_address: "地址"
+  connections_heading: "链路"
+  col_from: "来源"
+  col_to: "目标"
+  col_strength: "强度"
+  col_signal: "信号"
+  border_routers_heading: "Thread 边界路由器 (mDNS)"
+  empty_border_routers: "未发现。需要启用 mDNS 发现。"
+  col_device: "设备"
+  col_thread_version: "Thread"
+  commissionable_heading: "可配网 (mDNS)"
+  empty_commissionable: "没有 Matter 设备在广播可配网状态。"
+  col_vid_pid: "VID / PID"
+  col_discriminator: "判别码"
+  col_mode: "模式"
+
+dcl:
+  lookup_btn: "在 CSA DCL 中查询"
+  hint: "将此产品的厂商 ID 和产品 ID 发送到 CSA Distributed Compliance Ledger (on.dcl.csa-iot.org)。不点击则不会发送任何内容。"
+  ok: "已根据 CSA DCL 更新。"
+  none: "CSA DCL 中没有此厂商 ID 和产品 ID 的条目。"
+  error: "无法连接到 CSA DCL。"

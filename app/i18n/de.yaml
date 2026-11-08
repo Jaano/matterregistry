@@ -3,6 +3,7 @@ nav:
   devices: "Geräte"
   products: "Produkte"
   settings: "Einstellungen"
+  network: "Netzwerk"
 
 index:
   tagline: "Out-of-Band-Register für Kopplungsinformationen von Matter-Geräten."
@@ -473,3 +474,35 @@ modal:
   confirm: "Bestätigen"
   cancel: "Abbrechen"
   delete: "Löschen"
+
+network:
+  title: "Netzwerk"
+  topology_heading: "Topologie"
+  empty_topology: "Noch keine Topologie. Sie erscheint nach einer Synchronisierung, wenn der Matter-Server sie unterstützt."
+  collected: "Erfasst"
+  col_node: "Knoten"
+  col_kind: "Art"
+  col_role: "Rolle"
+  col_network: "Netzwerk"
+  col_address: "Adresse"
+  connections_heading: "Verbindungen"
+  col_from: "Von"
+  col_to: "Nach"
+  col_strength: "Stärke"
+  col_signal: "Signal"
+  border_routers_heading: "Thread-Border-Router (mDNS)"
+  empty_border_routers: "Keine gefunden. Erfordert mDNS-Erkennung."
+  col_device: "Gerät"
+  col_thread_version: "Thread"
+  commissionable_heading: "Bereit zur Inbetriebnahme (mDNS)"
+  empty_commissionable: "Kein Matter-Gerät wartet auf die Inbetriebnahme."
+  col_vid_pid: "VID / PID"
+  col_discriminator: "Discriminator"
+  col_mode: "Modus"
+
+dcl:
+  lookup_btn: "In CSA DCL nachschlagen"
+  hint: "Sendet Hersteller- und Produkt-ID dieses Produkts an das CSA Distributed Compliance Ledger (on.dcl.csa-iot.org). Ohne Klick wird nichts gesendet."
+  ok: "Aus dem CSA DCL aktualisiert."
+  none: "Das CSA DCL hat keinen Eintrag für diese Hersteller- und Produkt-ID."
+  error: "CSA DCL nicht erreichbar."

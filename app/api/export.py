@@ -1,5 +1,5 @@
 import json
-from datetime import UTC, datetime
+from datetime import datetime
 
 from fastapi import APIRouter, Depends
 from fastapi.responses import Response
@@ -19,7 +19,7 @@ def export_backup(session: Session = Depends(get_session)):
     data = build_export(session, app_version=settings.version)
     audit_log(session, action="export.full", entity="export:json", reason="api.export")
     session.commit()
-    filename = f"matterregistry-{datetime.now(UTC).strftime('%Y-%m-%d')}.json"
+    filename = f"matterregistry-{datetime.now().astimezone().strftime('%Y-%m-%d')}.json"
     return Response(
         content=json.dumps(data, ensure_ascii=False, indent=2),
         media_type="application/json",

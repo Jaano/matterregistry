@@ -79,12 +79,12 @@
   </div>
 
   {% if scan_mode == "edit" %}
-  <!-- Tab B: Matter 11-digit manual code -->
+  <!-- Tab B: Matter 11- or 21-digit manual code -->
   <div id="tab-matter-code" class="tab-panel hidden">
     <form method="post" action="{{ scan_action }}" id="form-matter-code">
       <label class="block text-xs text-gray-500 mb-1">{{ t.scan_block.matter_code_label }}</label>
       <input type="text" name="manual_code" id="manual-code-input"
-             placeholder="12345678901" maxlength="11" pattern="\d{11}"
+             placeholder="12345678901" maxlength="21" pattern="\d{11}|\d{21}"
              class="w-full border border-gray-300 rounded px-3 py-2 text-sm font-mono mb-1"
              autocomplete="off">
       <p id="manual-code-hint" class="text-xs text-gray-400 mb-3">{{ t.scan_block.matter_code_hint }}</p>
@@ -303,7 +303,7 @@
   if (mcInput) {
     mcInput.addEventListener('input', () => {
       const v = mcInput.value.replace(/\D/g, '');
-      if (v.length === 11) {
+      if (v.length === 11 || v.length === 21) {
         if (verhoeff(v)) {
           mcHint.textContent = '✓ Check digit valid';
           mcHint.className = 'text-xs text-green-600 mb-3';
@@ -314,7 +314,7 @@
           mcSubmit.disabled = true;
         }
       } else {
-        mcHint.textContent = 'Enter 11 digits - check digit validated before submit.';
+        mcHint.textContent = 'Enter 11 or 21 digits - check digit validated before submit.';
         mcHint.className = 'text-xs text-gray-400 mb-3';
         mcSubmit.disabled = false;
       }

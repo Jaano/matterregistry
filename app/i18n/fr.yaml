@@ -3,6 +3,7 @@ nav:
   devices: "Appareils"
   products: "Produits"
   settings: "Paramètres"
+  network: "Réseau"
 
 index:
   tagline: "Registre hors bande des informations d'appairage des appareils Matter."
@@ -473,3 +474,35 @@ modal:
   confirm: "Confirmer"
   cancel: "Annuler"
   delete: "Supprimer"
+
+network:
+  title: "Réseau"
+  topology_heading: "Topologie"
+  empty_topology: "Pas encore de topologie. Elle apparaît après une synchronisation si le serveur Matter la prend en charge."
+  collected: "Collectée"
+  col_node: "Nœud"
+  col_kind: "Type"
+  col_role: "Rôle"
+  col_network: "Réseau"
+  col_address: "Adresse"
+  connections_heading: "Liaisons"
+  col_from: "De"
+  col_to: "Vers"
+  col_strength: "Force"
+  col_signal: "Signal"
+  border_routers_heading: "Routeurs de bordure Thread (mDNS)"
+  empty_border_routers: "Aucun détecté. Nécessite la découverte mDNS."
+  col_device: "Appareil"
+  col_thread_version: "Thread"
+  commissionable_heading: "Ouverts à l'appairage (mDNS)"
+  empty_commissionable: "Aucun appareil Matter n'annonce être prêt à l'appairage."
+  col_vid_pid: "VID / PID"
+  col_discriminator: "Discriminant"
+  col_mode: "Mode"
+
+dcl:
+  lookup_btn: "Rechercher dans le CSA DCL"
+  hint: "Envoie l'ID fabricant et l'ID produit au CSA Distributed Compliance Ledger (on.dcl.csa-iot.org). Rien n'est envoyé sans clic."
+  ok: "Mis à jour depuis le CSA DCL."
+  none: "Le CSA DCL n'a pas d'entrée pour cet ID fabricant et produit."
+  error: "Impossible de joindre le CSA DCL."

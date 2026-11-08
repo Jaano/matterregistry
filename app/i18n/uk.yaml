@@ -3,6 +3,7 @@ nav:
   devices: "Пристрої"
   products: "Продукти"
   settings: "Налаштування"
+  network: "Мережа"
 
 index:
   tagline: "Позасмуговий реєстр інформації про сполучення пристроїв Matter."
@@ -473,3 +474,35 @@ modal:
   confirm: "Підтвердити"
   cancel: "Скасувати"
   delete: "Видалити"
+
+network:
+  title: "Мережа"
+  topology_heading: "Топологія"
+  empty_topology: "Топології ще немає. Вона з'явиться після синхронізації, якщо сервер Matter її підтримує."
+  collected: "Зібрано"
+  col_node: "Вузол"
+  col_kind: "Тип"
+  col_role: "Роль"
+  col_network: "Мережа"
+  col_address: "Адреса"
+  connections_heading: "З'єднання"
+  col_from: "Звідки"
+  col_to: "Куди"
+  col_strength: "Сила"
+  col_signal: "Сигнал"
+  border_routers_heading: "Прикордонні маршрутизатори Thread (mDNS)"
+  empty_border_routers: "Не знайдено. Потрібне виявлення mDNS."
+  col_device: "Пристрій"
+  col_thread_version: "Thread"
+  commissionable_heading: "Відкриті для введення в експлуатацію (mDNS)"
+  empty_commissionable: "Жоден пристрій Matter не повідомляє про готовність до введення в експлуатацію."
+  col_vid_pid: "VID / PID"
+  col_discriminator: "Дискримінатор"
+  col_mode: "Режим"
+
+dcl:
+  lookup_btn: "Знайти в CSA DCL"
+  hint: "Надсилає ідентифікатори виробника й продукту до CSA Distributed Compliance Ledger (on.dcl.csa-iot.org). Без натискання нічого не надсилається."
+  ok: "Оновлено з CSA DCL."
+  none: "У CSA DCL немає запису для цього ідентифікатора виробника й продукту."
+  error: "Не вдалося зв'язатися з CSA DCL."

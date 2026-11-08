@@ -29,10 +29,24 @@ from ..models import (
     PropertyType,
 )
 from ..settings import settings as app_settings
+from ..thread import thread_role_label
 
 _TEMPLATES_DIR = Path(__file__).parent / "templates"
 templates = Jinja2Templates(directory=str(_TEMPLATES_DIR))
+
+
+def _local_time(dt: datetime | None, fmt: str = "%Y-%m-%d %H:%M") -> str:
+    """Format a stored (UTC) datetime in the timezone set by the TZ env var."""
+    if dt is None:
+        return ""
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=UTC)
+    return dt.astimezone().strftime(fmt)
+
+
 templates.env.filters["host"] = lambda u: urlparse(u).netloc or u
+templates.env.filters["localtime"] = _local_time
+templates.env.filters["thread_role"] = thread_role_label
 
 logger = logging.getLogger(__name__)
 
@@ -681,6 +695,105 @@ def _apply_product_links(
         position += 1
 
 
+@router.get("/network", response_class=HTMLResponse)
+def network_view(request: Request, session: Session = Depends(get_session)):
+    """Read-only network view: stored Matter topology plus live mDNS inventory."""
+    from ..integrations.matter_server.server_client import load_topology
+    from ..integrations.matter_server.topology import node_label, node_network_name, role_label
+
+    topology = load_topology(session)
+
+    # The server reports collection time as epoch ms/s or an ISO string.
+    collected = (topology or {}).get("collected_at")
+    collected_at = str(collected) if collected not in (None, "") else None
+    try:
+        if isinstance(collected, int | float) or (
+            isinstance(collected, str) and collected.isdigit()
+        ):
+            seconds = float(collected)
+            if seconds > 1e11:
+                seconds /= 1000
+            collected_at = _local_time(datetime.fromtimestamp(seconds, UTC))
+        elif collected_at:
+            collected_at = _local_time(datetime.fromisoformat(collected_at))
+    except (ValueError, OverflowError, OSError):
+        pass
+
+    devices_by_node: dict[int, tuple[str, str]] = {}
+    for node_id, device_id, name in session.exec(
+        select(DeviceFabricMembership.node_id, Device.id, Device.name).join(
+            Device, col(Device.id) == col(DeviceFabricMembership.device_id)
+        )
+    ).all():
+        devices_by_node[node_id] = (device_id, name)
+
+    def _name(node_id: int) -> str | None:
+        found = devices_by_node.get(node_id)
+        return found[1] if found else None
+
+    nodes_by_id = {n.get("id"): n for n in (topology or {}).get("nodes") or []}
+    node_rows = []
+    for n in nodes_by_id.values():
+        found = devices_by_node.get(n.get("node_id")) if n.get("kind") == "matter" else None
+        node_rows.append(
+            {
+                "label": node_label(n, _name),
+                "device_id": found[0] if found else None,
+                "kind": n.get("kind"),
+                "role": role_label(n.get("role")),
+                "network": node_network_name(n),
+                "address": n.get("ext_address") or n.get("bssid"),
+            }
+        )
+    link_rows = []
+    for c in (topology or {}).get("connections") or []:
+        src, dst = nodes_by_id.get(c.get("source")), nodes_by_id.get(c.get("target"))
+        if src is None or dst is None:
+            continue
+        direction = c.get("source_to_target") or {}
+        signal = ", ".join(
+            part
+            for part in (
+                f"LQI {direction['lqi']}" if direction.get("lqi") is not None else "",
+                f"RSSI {direction['rssi']} dBm" if direction.get("rssi") is not None else "",
+            )
+            if part
+        )
+        link_rows.append(
+            {
+                "source": node_label(src, _name),
+                "target": node_label(dst, _name),
+                "network": c.get("network"),
+                "strength": c.get("strength") or "unknown",
+                "signal": signal,
+            }
+        )
+
+    mdns = getattr(request.app.state, "mdns_client", None)
+    commissionable = []
+    for rec in mdns.commissionable_devices() if mdns else []:
+        vid, pid = rec.get("vendor_id"), rec.get("product_id")
+        vid_pid = f"0x{vid:04X}" if vid is not None else ""
+        if vid is not None and pid is not None:
+            vid_pid += f" / 0x{pid:04X}"
+        mode = {1: "basic", 2: "enhanced"}.get(rec.get("commissioning_mode"), "")
+        commissionable.append({**rec, "vid_pid": vid_pid, "mode": mode})
+
+    return templates.TemplateResponse(
+        request,
+        "network/index.html",
+        _ctx(
+            request,
+            has_topology=topology is not None,
+            collected_at=collected_at,
+            node_rows=node_rows,
+            link_rows=link_rows,
+            border_routers=mdns.border_routers() if mdns else [],
+            commissionable=commissionable,
+        ),
+    )
+
+
 @router.get("/products", response_class=HTMLResponse)
 def product_list(
     request: Request,
@@ -792,7 +905,9 @@ def product_create(
 
 
 @router.get("/products/{id}", response_class=HTMLResponse)
-def product_detail(id: str, request: Request, session: Session = Depends(get_session)):
+def product_detail(
+    id: str, request: Request, dcl: str | None = None, session: Session = Depends(get_session)
+):
     product = session.get(Product, id)
     if not product:
         return HTMLResponse("Product not found", status_code=404)
@@ -807,8 +922,56 @@ def product_detail(id: str, request: Request, session: Session = Depends(get_ses
     return templates.TemplateResponse(
         request,
         "products/detail.html",
-        _ctx(request, product=product, links=links, devices=devices, device_count=len(devices)),
+        _ctx(
+            request,
+            product=product,
+            links=links,
+            devices=devices,
+            device_count=len(devices),
+            can_dcl_lookup=(
+                product.protocol == DeviceProtocol.matter
+                and product.vendor_id is not None
+                and product.product_id is not None
+            ),
+            dcl_status=dcl if dcl in {"ok", "none", "error"} else None,
+        ),
     )
+
+
+@router.post("/products/{id}/dcl-lookup")
+def product_dcl_lookup(id: str, request: Request, session: Session = Depends(get_session)):
+    """Explicit, per-Product CSA DCL lookup (sends vendor and product ID to the CSA)."""
+    from .. import csa
+
+    product = session.get(Product, id)
+    if not product:
+        return HTMLResponse("Product not found", status_code=404)
+    if (
+        product.protocol != DeviceProtocol.matter
+        or product.vendor_id is None
+        or product.product_id is None
+    ):
+        return HTMLResponse("DCL lookup needs a Matter product with vendor and product ID", 400)
+    try:
+        model, vendor = csa.fetch(product.vendor_id, product.product_id)
+    except csa.DclError as exc:
+        logger.warning("CSA DCL lookup failed for product %s: %s", id, exc)
+        status = "error"
+    else:
+        status = "none"
+        if model is not None:
+            if csa.apply(session, product, model, vendor):
+                product.updated_at = datetime.now(UTC)
+                session.add(product)
+            audit_log(
+                session,
+                action="product.dcl_lookup",
+                entity=f"product:{id}",
+                reason="web.product_dcl_lookup",
+            )
+            session.commit()
+            status = "ok"
+    return RedirectResponse(_url(request, f"/products/{id}?dcl={status}"), status_code=303)
 
 
 @router.get("/products/{id}/edit", response_class=HTMLResponse)

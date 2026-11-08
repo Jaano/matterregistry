@@ -6,6 +6,10 @@ Browses `_hap._tcp.local.`, `_hap._udp.local.` (HomeKit),
 (operational Matter nodes) and keeps in-memory sets of discovered services
 (event-driven, like the Matter Server client).
 
+Also browses `_meshcop._udp.local.` (Thread Border Agents) and
+`_matterc._udp.local.` (Matter devices open for commissioning). Those two
+are a passive, live-only inventory: nothing is persisted, projected, or sent.
+
 HAP projection: auto-creates / correlates ``homekit`` Device rows, deduped on
 the HAP accessory id and linked to stored onboarding codes via the setup hash.
 
@@ -58,9 +62,11 @@ _HAP_TCP = "_hap._tcp.local."
 _HAP_UDP = "_hap._udp.local."
 _LTPDU = "_ltpdu._udp.local."
 _MATTER_TCP = "_matter._tcp.local."
+_MESHCOP = "_meshcop._udp.local."
+_MATTERC = "_matterc._udp.local."
 
 _HAP_TYPES = (_HAP_TCP, _HAP_UDP)
-_ALL_TYPES = (_HAP_TCP, _HAP_UDP, _LTPDU, _MATTER_TCP)
+_ALL_TYPES = (_HAP_TCP, _HAP_UDP, _LTPDU, _MATTER_TCP, _MESHCOP, _MATTERC)
 
 # EUI-64 is always 16 hex chars without separators.
 _EUI64_RE = re.compile(r"^[0-9A-Fa-f]{16}$")
@@ -239,6 +245,87 @@ def parse_matter_service(
         "session_idle_ms": int(sii_raw) if sii_raw else None,
         "session_active_ms": int(sai_raw) if sai_raw else None,
         "session_active_threshold": int(sat_raw) if sat_raw else None,
+    }
+
+
+def _txt_hex(properties: dict, key: str) -> str | None:
+    """Read a binary TXT value as uppercase hex (Thread TXT keys such as xp and id are raw bytes)."""
+    raw = properties.get(key.encode()) if properties else None
+    return raw.hex().upper() if isinstance(raw, bytes) and raw else None
+
+
+def _to_int(raw: str | None) -> int | None:
+    try:
+        return int(raw) if raw else None
+    except ValueError:
+        return None
+
+
+def _instance_label(name: str, service_type: str) -> str:
+    suffix = "." + service_type
+    label = name[: -len(suffix)] if name.endswith(suffix) else name.split(".")[0]
+    return label.replace("\\032", " ").strip()
+
+
+def parse_meshcop_service(
+    name: str,
+    properties: dict,
+    server: str | None,
+    addresses: list[str],
+    port: int | None,
+) -> dict | None:
+    """Parse a ``_meshcop._udp`` Thread Border Agent record (passive inventory only).
+
+    Returns None when the record carries neither an extended PAN ID nor a network name.
+    """
+    ext_pan_id = _txt_hex(properties, "xp")
+    network_name = _txt_str(properties, "nn")
+    if not ext_pan_id and not network_name:
+        return None
+    return {
+        "instance": _instance_label(name, _MESHCOP),
+        "vendor": _txt_str(properties, "vn"),
+        "model": _txt_str(properties, "mn"),
+        "network_name": network_name,
+        "thread_version": _txt_str(properties, "tv"),
+        "ext_pan_id": ext_pan_id,
+        "border_agent_id": _txt_hex(properties, "id"),
+        "host_name": server.rstrip(".") if server else None,
+        "addresses": list(addresses),
+        "port": port,
+    }
+
+
+def parse_matterc_service(
+    name: str,
+    properties: dict,
+    server: str | None,
+    addresses: list[str],
+    port: int | None,
+) -> dict | None:
+    """Parse a ``_matterc._udp`` record: a Matter device open for commissioning.
+
+    Returns None without a discriminator (``D``).
+    """
+    discriminator = _to_int(_txt_str(properties, "D"))
+    if discriminator is None:
+        return None
+    vid = pid = None
+    vp = _txt_str(properties, "VP")
+    if vp:
+        vid_raw, _, pid_raw = vp.partition("+")
+        vid, pid = _to_int(vid_raw), _to_int(pid_raw)
+    return {
+        "instance": _instance_label(name, _MATTERC),
+        "discriminator": discriminator,
+        "vendor_id": vid,
+        "product_id": pid,
+        "commissioning_mode": _to_int(_txt_str(properties, "CM")),
+        "device_type": _to_int(_txt_str(properties, "DT")),
+        "device_name": _txt_str(properties, "DN"),
+        "host_name": server.rstrip(".") if server else None,
+        "addresses": list(addresses),
+        "port": port,
     }
 
 
@@ -754,7 +841,8 @@ def project_matter(
 
 
 class MdnsClient(Integration):
-    """Passive mDNS browser for HAP (HomeKit), Thread-LTPDU, and Matter operational."""
+    """Passive mDNS browser for HAP (HomeKit), Thread-LTPDU, Matter operational,
+    Thread Border Agent, and Matter commissionable records."""
 
     slug = "mdns"
     short_name = "mdns"
@@ -779,6 +867,10 @@ class MdnsClient(Integration):
         self._ltpdu_discovered: dict[str, dict] = {}
         # Matter operational records keyed by (compressed_fabric_hex, node_id).
         self._matter_discovered: dict[tuple[str, int], dict] = {}
+        # Thread Border Agents and Matter devices open for commissioning, keyed by
+        # service instance name. Live view only: nothing is persisted or projected.
+        self._meshcop_discovered: dict[str, dict] = {}
+        self._matterc_discovered: dict[str, dict] = {}
 
     @property
     def status(self) -> ClientStatus:
@@ -805,15 +897,15 @@ class MdnsClient(Integration):
                 AsyncServiceBrowser(
                     self._azc.zeroconf, _MATTER_TCP, handlers=[self._on_matter_state_change]
                 ),
+                AsyncServiceBrowser(
+                    self._azc.zeroconf, _MESHCOP, handlers=[self._on_meshcop_state_change]
+                ),
+                AsyncServiceBrowser(
+                    self._azc.zeroconf, _MATTERC, handlers=[self._on_matterc_state_change]
+                ),
             ]
             self._status = ClientStatus.browsing
-            logger.info(
-                "mDNS discovery started (browsing %s, %s, %s, %s)",
-                _HAP_TCP,
-                _HAP_UDP,
-                _LTPDU,
-                _MATTER_TCP,
-            )
+            logger.info("mDNS discovery started (browsing %s)", ", ".join(_ALL_TYPES))
         except Exception as exc:  # pragma: no cover - network/setup failure
             self._status = ClientStatus.error
             self._error_msg = str(exc)
@@ -963,6 +1055,58 @@ class MdnsClient(Integration):
     def matter_discovered(self) -> list[dict]:
         """Snapshot of currently-discovered Matter operational nodes."""
         return list(self._matter_discovered.values())
+
+    def _on_meshcop_state_change(
+        self, zeroconf: Any, service_type: str, name: str, state_change: Any
+    ) -> None:
+        self._on_passive_state_change(
+            _MESHCOP, name, state_change, parse_meshcop_service, self._meshcop_discovered
+        )
+
+    def _on_matterc_state_change(
+        self, zeroconf: Any, service_type: str, name: str, state_change: Any
+    ) -> None:
+        self._on_passive_state_change(
+            _MATTERC, name, state_change, parse_matterc_service, self._matterc_discovered
+        )
+
+    def _on_passive_state_change(
+        self, service_type: str, name: str, state_change: Any, parser: Any, store: dict[str, dict]
+    ) -> None:
+        from zeroconf import ServiceStateChange
+
+        if state_change is ServiceStateChange.Removed:
+            store.pop(name, None)
+            return
+        asyncio.ensure_future(self._resolve_passive(service_type, name, parser, store))
+
+    async def _resolve_passive(
+        self, service_type: str, name: str, parser: Any, store: dict[str, dict]
+    ) -> None:
+        from zeroconf.asyncio import AsyncServiceInfo
+
+        if self._azc is None:
+            return
+        info = AsyncServiceInfo(service_type, name)
+        try:
+            await info.async_request(self._azc.zeroconf, 3000)
+        except Exception:  # pragma: no cover
+            return
+        addresses = info.parsed_addresses() if hasattr(info, "parsed_addresses") else []
+        parsed = parser(name, info.properties or {}, info.server, addresses, info.port)
+        if parsed is not None:
+            store[name] = parsed
+
+    def border_routers(self) -> list[dict]:
+        """Thread Border Agents currently advertising on the LAN."""
+        return sorted(
+            self._meshcop_discovered.values(),
+            key=lambda r: (r.get("network_name") or "", r.get("instance") or ""),
+        )
+
+    def commissionable_devices(self) -> list[dict]:
+        """Matter devices currently advertising that they are open for commissioning."""
+        return sorted(self._matterc_discovered.values(), key=lambda r: r.get("instance") or "")
 
     async def ingest(self) -> None:
         """No-op: the browser keeps a live cache; projection reads it directly."""

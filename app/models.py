@@ -1,5 +1,5 @@
 import uuid
-from datetime import date, datetime
+from datetime import UTC, date, datetime
 from enum import StrEnum
 
 from sqlalchemy import JSON as SA_JSON
@@ -52,6 +52,7 @@ class FieldSource(StrEnum):
     matter = "matter"  # 100 - synced from Matter Server
     otbr = "otbr"  #  50 - synced from OpenThread Border Router
     mdns = "mdns"  #  40 - discovered via mDNS / HAP advertisement
+    dcl = "dcl"  #  30 - CSA Distributed Compliance Ledger (explicit lookup)
     generated = "generated"  #  5 - app default / placeholder
 
     @classmethod
@@ -63,6 +64,7 @@ class FieldSource(StrEnum):
             "matter": 100,
             "otbr": 50,
             "mdns": 40,
+            "dcl": 30,
             "generated": 5,
         }
         v = source.value if isinstance(source, cls) else str(source)
@@ -78,6 +80,7 @@ class FieldSource(StrEnum):
             "ha": "HomeAssistant",
             "otbr": "OTBR",
             "mdns": "mDNS",
+            "dcl": "CSA DCL",
         }.get(self.value, "")
 
     @property
@@ -158,7 +161,7 @@ class ProductLinkKind(StrEnum):
 
 
 def _now() -> datetime:
-    return datetime.utcnow()
+    return datetime.now(UTC)
 
 
 class Product(SQLModel, table=True):
@@ -581,6 +584,24 @@ class MatterNodeRecord(SQLModel, table=True):
     spec_version_int: int | None = Field(default=None)
     hardware_version_int: int | None = Field(default=None)
     software_version_int: int | None = Field(default=None)
+    batteries_json: str | None = Field(default=None)  # JSON list of Power Source battery facts
+    bridged_json: str | None = Field(default=None)  # JSON list of Bridged Node endpoints
+
+
+class MatterTopologySnapshot(SQLModel, table=True):
+    """Latest network topology graph read from the Matter Server (WS schema 13).
+
+    One replaceable row; the graph is built by the server from its attribute
+    cache. Kept so the network view survives the server being offline.
+    Excluded from backups (§4a).
+    """
+
+    __tablename__ = "matter_topology_snapshot"  # type: ignore[assignment]
+
+    id: str = Field(default="matter_server", primary_key=True)
+    collected_at: str | None = Field(default=None)  # server-reported collection time
+    payload_json: str = Field(default="{}")  # {"nodes": [...], "connections": [...]}
+    updated_at: datetime = Field(default_factory=_now)
 
 
 # ── Per-device integration data store ─────────────────────────────────────────

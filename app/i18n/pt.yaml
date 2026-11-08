@@ -3,6 +3,7 @@ nav:
   devices: "Dispositivos"
   products: "Produtos"
   settings: "Configurações"
+  network: "Rede"
 
 index:
   tagline: "Registro externo das informações de emparelhamento de dispositivos Matter."
@@ -473,3 +474,35 @@ modal:
   confirm: "Confirmar"
   cancel: "Cancelar"
   delete: "Excluir"
+
+network:
+  title: "Rede"
+  topology_heading: "Topologia"
+  empty_topology: "Ainda sem topologia. Aparece após uma sincronização se o servidor Matter a suportar."
+  collected: "Recolhida"
+  col_node: "Nó"
+  col_kind: "Tipo"
+  col_role: "Função"
+  col_network: "Rede"
+  col_address: "Endereço"
+  connections_heading: "Ligações"
+  col_from: "De"
+  col_to: "Para"
+  col_strength: "Intensidade"
+  col_signal: "Sinal"
+  border_routers_heading: "Border Routers Thread (mDNS)"
+  empty_border_routers: "Nenhum detetado. Requer a deteção mDNS."
+  col_device: "Dispositivo"
+  col_thread_version: "Thread"
+  commissionable_heading: "Abertos para emparelhamento (mDNS)"
+  empty_commissionable: "Nenhum dispositivo Matter anuncia estar pronto para emparelhamento."
+  col_vid_pid: "VID / PID"
+  col_discriminator: "Discriminador"
+  col_mode: "Modo"
+
+dcl:
+  lookup_btn: "Pesquisar no CSA DCL"
+  hint: "Envia o ID do fabricante e o ID do produto para o CSA Distributed Compliance Ledger (on.dcl.csa-iot.org). Nada é enviado sem clicar."
+  ok: "Atualizado a partir do CSA DCL."
+  none: "O CSA DCL não tem entrada para este ID de fabricante e produto."
+  error: "Não foi possível contactar o CSA DCL."

@@ -36,6 +36,7 @@ from typing import Any
 import httpx
 
 from ...models import DeviceProtocol
+from ...thread import thread_role_label
 from ..base import SyncResult
 from ..polled import PermanentError, PolledIntegration
 
@@ -149,7 +150,10 @@ class ThreadLink:
     def role_display(self) -> str:
         """Human-readable Thread role, with RLOC16 / parent router where known."""
         if self.thread_role == "router":
-            return f"Router (RLOC16 0x{self.rloc16:04X})" if self.rloc16 else "Router"
+            return (
+                thread_role_label("Router", f"RLOC16 0x{self.rloc16:04X}" if self.rloc16 else None)
+                or "Router"
+            )
         if self.thread_role == "end_device":
             if self.parent_rloc16:
                 return f"End device of router 0x{self.parent_rloc16:04X}"

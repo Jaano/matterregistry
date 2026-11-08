@@ -63,13 +63,13 @@ def test_upsert_overwrites_on_repeat_call(engine, device):
         upsert(s, device_id=device.id, integration="mdns", payload={"v": 1})
         s.commit()
 
-    t_before = datetime.now(UTC).replace(tzinfo=None)
+    t_before = datetime.now(UTC)
 
     with Session(engine) as s:
         row = upsert(s, device_id=device.id, integration="mdns", payload={"v": 2})
         s.commit()
         assert json.loads(row.payload_json) == {"v": 2}
-        assert row.retrieved_at >= t_before
+        assert row.retrieved_at.replace(tzinfo=UTC) >= t_before
 
     with Session(engine) as s:
         rows = s.exec(select(DeviceIntegrationData)).all()

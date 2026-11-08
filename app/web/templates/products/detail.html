@@ -6,6 +6,7 @@
 {%- set ico = source.icon if source else '' -%}
 {%- set lbl = source.label if source else '' -%}
 {%- if ico %}<span class="{{ ico }} ml-1 text-gray-400" role="img" aria-label="{{ lbl }}" title="{{ lbl }}"></span>{%- endif -%}
+{%- if not ico and lbl %}<span class="ml-1 text-xs text-gray-400" title="{{ lbl }}">{{ lbl }}</span>{%- endif -%}
 {%- endmacro -%}
 
 {% macro status_pill(d) %}
@@ -47,6 +48,12 @@
   </div>
 </div>
 
+{% if dcl_status %}
+<div class="mb-4 rounded px-4 py-2 text-sm {% if dcl_status == 'ok' %}bg-green-50 text-green-800{% elif dcl_status == 'none' %}bg-yellow-50 text-yellow-800{% else %}bg-red-50 text-red-800{% endif %}" role="status">
+  {{ t.dcl[dcl_status] }}
+</div>
+{% endif %}
+
 <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
   <div class="bg-white rounded shadow p-5">
     <h2 class="text-lg font-semibold mb-4">{{ t.product.detail.identity }}</h2>
@@ -80,6 +87,12 @@
       </div>
       {% endif %}
     </dl>
+    {% if can_dcl_lookup %}
+    <form method="post" action="{{ url('/products/' + product.id + '/dcl-lookup') }}" class="mt-4">
+      <button type="submit" class="border border-gray-300 px-3 py-1.5 rounded text-sm hover:bg-gray-50">{{ t.dcl.lookup_btn }}</button>
+      <p class="mt-1 text-xs text-gray-500">{{ t.dcl.hint }}</p>
+    </form>
+    {% endif %}
   </div>
 
   <div class="bg-white rounded shadow p-5">

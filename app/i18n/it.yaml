@@ -3,6 +3,7 @@ nav:
   devices: "Dispositivi"
   products: "Prodotti"
   settings: "Impostazioni"
+  network: "Rete"
 
 index:
   tagline: "Registro fuori banda delle informazioni di accoppiamento dei dispositivi Matter."
@@ -473,3 +474,35 @@ modal:
   confirm: "Conferma"
   cancel: "Annulla"
   delete: "Elimina"
+
+network:
+  title: "Rete"
+  topology_heading: "Topologia"
+  empty_topology: "Nessuna topologia per ora. Compare dopo una sincronizzazione se il server Matter la supporta."
+  collected: "Rilevata"
+  col_node: "Nodo"
+  col_kind: "Tipo"
+  col_role: "Ruolo"
+  col_network: "Rete"
+  col_address: "Indirizzo"
+  connections_heading: "Collegamenti"
+  col_from: "Da"
+  col_to: "A"
+  col_strength: "Intensità"
+  col_signal: "Segnale"
+  border_routers_heading: "Border Router Thread (mDNS)"
+  empty_border_routers: "Nessuno rilevato. Richiede il rilevamento mDNS."
+  col_device: "Dispositivo"
+  col_thread_version: "Thread"
+  commissionable_heading: "Aperti all'abbinamento (mDNS)"
+  empty_commissionable: "Nessun dispositivo Matter annuncia di essere pronto all'abbinamento."
+  col_vid_pid: "VID / PID"
+  col_discriminator: "Discriminatore"
+  col_mode: "Modalità"
+
+dcl:
+  lookup_btn: "Cerca nel CSA DCL"
+  hint: "Invia l'ID produttore e l'ID prodotto al CSA Distributed Compliance Ledger (on.dcl.csa-iot.org). Senza clic non viene inviato nulla."
+  ok: "Aggiornato dal CSA DCL."
+  none: "Il CSA DCL non ha una voce per questo ID produttore e prodotto."
+  error: "Impossibile contattare il CSA DCL."

@@ -16,7 +16,7 @@ dependencies = [
     "alembic>=1.13",
     "httpx>=0.27",
     "PyYAML>=6.0",
-    "python-matter-server>=6.0",
+    "matter-python-client>=1.5.5,<2",
     "segno>=1.6",
     "zeroconf>=0.130",
 ]

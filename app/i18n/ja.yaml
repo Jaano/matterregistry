@@ -3,6 +3,7 @@ nav:
   devices: "デバイス"
   products: "製品"
   settings: "設定"
+  network: "ネットワーク"
 
 index:
   tagline: "Matter デバイスのペアリング情報を保管する帯域外レジストリ。"
@@ -473,3 +474,35 @@ modal:
   confirm: "確認"
   cancel: "キャンセル"
   delete: "削除"
+
+network:
+  title: "ネットワーク"
+  topology_heading: "トポロジー"
+  empty_topology: "トポロジーはまだありません。Matter サーバーが対応していれば、同期後に表示されます。"
+  collected: "取得日時"
+  col_node: "ノード"
+  col_kind: "種別"
+  col_role: "役割"
+  col_network: "ネットワーク"
+  col_address: "アドレス"
+  connections_heading: "リンク"
+  col_from: "送信元"
+  col_to: "宛先"
+  col_strength: "強度"
+  col_signal: "信号"
+  border_routers_heading: "Thread ボーダールーター (mDNS)"
+  empty_border_routers: "見つかりません。mDNS 検出が必要です。"
+  col_device: "デバイス"
+  col_thread_version: "Thread"
+  commissionable_heading: "コミッショニング受付中 (mDNS)"
+  empty_commissionable: "コミッショニング待機を通知している Matter デバイスはありません。"
+  col_vid_pid: "VID / PID"
+  col_discriminator: "ディスクリミネーター"
+  col_mode: "モード"
+
+dcl:
+  lookup_btn: "CSA DCL で検索"
+  hint: "この製品のベンダー ID と製品 ID を CSA Distributed Compliance Ledger (on.dcl.csa-iot.org) に送信します。クリックしない限り何も送信されません。"
+  ok: "CSA DCL の情報で更新しました。"
+  none: "このベンダー ID と製品 ID に該当する CSA DCL のエントリはありません。"
+  error: "CSA DCL に接続できませんでした。"

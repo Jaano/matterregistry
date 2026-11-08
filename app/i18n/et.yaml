@@ -3,6 +3,7 @@ nav:
   devices: "Seadmed"
   products: "Tooted"
   settings: "Seaded"
+  network: "Võrk"
 
 index:
   tagline: "Register Matter seadmete sidumisinfo jaoks."
@@ -473,3 +474,35 @@ modal:
   confirm: "Kinnita"
   cancel: "Tühista"
   delete: "Kustuta"
+
+network:
+  title: "Võrk"
+  topology_heading: "Topoloogia"
+  empty_topology: "Topoloogiat pole veel. See ilmub sünkroonimise järel, kui Matteri server seda toetab."
+  collected: "Kogutud"
+  col_node: "Sõlm"
+  col_kind: "Tüüp"
+  col_role: "Roll"
+  col_network: "Võrk"
+  col_address: "Aadress"
+  connections_heading: "Ühendused"
+  col_from: "Allikas"
+  col_to: "Siht"
+  col_strength: "Tugevus"
+  col_signal: "Signaal"
+  border_routers_heading: "Thread'i Border Routerid (mDNS)"
+  empty_border_routers: "Ühtegi ei leitud. Nõuab mDNS-tuvastust."
+  col_device: "Seade"
+  col_thread_version: "Thread"
+  commissionable_heading: "Valmis seadistamiseks (mDNS)"
+  empty_commissionable: "Ükski Matteri seade ei teata valmisolekust seadistamiseks."
+  col_vid_pid: "VID / PID"
+  col_discriminator: "Diskriminaator"
+  col_mode: "Režiim"
+
+dcl:
+  lookup_btn: "Otsi CSA DCL-ist"
+  hint: "Saadab toote tootja- ja tooteID CSA Distributed Compliance Ledgerisse (on.dcl.csa-iot.org). Klõpsamata ei saadeta midagi."
+  ok: "Uuendatud CSA DCL-i andmetest."
+  none: "CSA DCL-is pole selle tootja- ja tooteID kohta kirjet."
+  error: "CSA DCL-iga ei saanud ühendust."

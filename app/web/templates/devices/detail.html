@@ -136,12 +136,12 @@ html.dark #qr-svg img { filter: invert(1); }
       {% endif %}
       <div class="flex gap-2">
         <dt class="text-gray-500 w-36 shrink-0">{{ t.device.detail.field_added }}</dt>
-        <dd>{{ device.created_at.strftime('%Y-%m-%d') }}</dd>
+        <dd>{{ device.created_at | localtime('%Y-%m-%d') }}</dd>
       </div>
       {% if device.commissioned_at %}
       <div class="flex gap-2">
         <dt class="text-gray-500 w-36 shrink-0">{{ t.device.detail.field_commissioned }}</dt>
-        <dd>{{ device.commissioned_at.strftime('%Y-%m-%d') }}{{ src_badge(device.commissioned_at_source) }}</dd>
+        <dd>{{ device.commissioned_at | localtime('%Y-%m-%d') }}{{ src_badge(device.commissioned_at_source) }}</dd>
       </div>
       {% endif %}
       <div class="flex gap-2">
@@ -277,7 +277,7 @@ html.dark #qr-svg img { filter: invert(1); }
 {% macro integration_data_details(row, prepend=none) %}
 {% if row or prepend %}
 <details class="mt-2">
-  <summary class="cursor-pointer text-gray-500 text-xs select-none">{{ t.device.detail.int_data }}{% if row and row.retrieved_at %} <span class="text-gray-400">· {{ row.retrieved_at.strftime('%Y-%m-%d %H:%M') }}</span>{% endif %}</summary>
+  <summary class="cursor-pointer text-gray-500 text-xs select-none">{{ t.device.detail.int_data }}{% if row and row.retrieved_at %} <span class="text-gray-400">· {{ row.retrieved_at | localtime }}</span>{% endif %}</summary>
   <dl class="mt-2 space-y-1.5 text-xs">
     {% if prepend %}{% for key, value in prepend.items() %}
     <div class="flex gap-2">
@@ -434,7 +434,7 @@ html.dark #qr-svg img { filter: invert(1); }
     {% if matter_network.thread_role %}
     <div class="flex gap-2">
       <dt class="text-gray-500 w-36 shrink-0">{{ t.device.detail.field_routing_role }}</dt>
-      <dd class="font-mono text-xs">{{ matter_network.thread_role }}{{ src_badge(FieldSource.matter) }}</dd>
+      <dd class="font-mono text-xs">{{ matter_network.thread_role | thread_role }}{{ src_badge(FieldSource.matter) }}</dd>
     </div>
     {% elif thread_link %}
     <div class="flex gap-2">

@@ -3,6 +3,7 @@ nav:
   devices: "Urządzenia"
   products: "Produkty"
   settings: "Ustawienia"
+  network: "Sieć"
 
 index:
   tagline: "Zewnętrzny rejestr informacji o parowaniu urządzeń Matter."
@@ -473,3 +474,35 @@ modal:
   confirm: "Potwierdź"
   cancel: "Anuluj"
   delete: "Usuń"
+
+network:
+  title: "Sieć"
+  topology_heading: "Topologia"
+  empty_topology: "Brak topologii. Pojawi się po synchronizacji, jeśli serwer Matter ją obsługuje."
+  collected: "Zebrano"
+  col_node: "Węzeł"
+  col_kind: "Typ"
+  col_role: "Rola"
+  col_network: "Sieć"
+  col_address: "Adres"
+  connections_heading: "Połączenia"
+  col_from: "Od"
+  col_to: "Do"
+  col_strength: "Siła"
+  col_signal: "Sygnał"
+  border_routers_heading: "Routery graniczne Thread (mDNS)"
+  empty_border_routers: "Nie znaleziono. Wymaga wykrywania mDNS."
+  col_device: "Urządzenie"
+  col_thread_version: "Thread"
+  commissionable_heading: "Gotowe do parowania (mDNS)"
+  empty_commissionable: "Żadne urządzenie Matter nie ogłasza gotowości do parowania."
+  col_vid_pid: "VID / PID"
+  col_discriminator: "Dyskryminator"
+  col_mode: "Tryb"
+
+dcl:
+  lookup_btn: "Wyszukaj w CSA DCL"
+  hint: "Wysyła identyfikator producenta i produktu do CSA Distributed Compliance Ledger (on.dcl.csa-iot.org). Bez kliknięcia nic nie jest wysyłane."
+  ok: "Zaktualizowano z CSA DCL."
+  none: "CSA DCL nie ma wpisu dla tego identyfikatora producenta i produktu."
+  error: "Nie można połączyć się z CSA DCL."

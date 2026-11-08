@@ -3,6 +3,7 @@ nav:
   devices: "Laitteet"
   products: "Tuotteet"
   settings: "Asetukset"
+  network: "Verkko"
 
 index:
   tagline: "Erillinen rekisteri Matter-laitteiden pariliitostietoja varten."
@@ -473,3 +474,35 @@ modal:
   confirm: "Vahvista"
   cancel: "Peruuta"
   delete: "Poista"
+
+network:
+  title: "Verkko"
+  topology_heading: "Topologia"
+  empty_topology: "Topologiaa ei ole vielä. Se ilmestyy synkronoinnin jälkeen, jos Matter-palvelin tukee sitä."
+  collected: "Kerätty"
+  col_node: "Solmu"
+  col_kind: "Tyyppi"
+  col_role: "Rooli"
+  col_network: "Verkko"
+  col_address: "Osoite"
+  connections_heading: "Yhteydet"
+  col_from: "Lähde"
+  col_to: "Kohde"
+  col_strength: "Vahvuus"
+  col_signal: "Signaali"
+  border_routers_heading: "Thread Border Routerit (mDNS)"
+  empty_border_routers: "Ei löytynyt. Vaatii mDNS-etsinnän."
+  col_device: "Laite"
+  col_thread_version: "Thread"
+  commissionable_heading: "Valmiina käyttöönottoon (mDNS)"
+  empty_commissionable: "Mikään Matter-laite ei ilmoita olevansa valmis käyttöönottoon."
+  col_vid_pid: "VID / PID"
+  col_discriminator: "Discriminator"
+  col_mode: "Tila"
+
+dcl:
+  lookup_btn: "Hae CSA DCL:stä"
+  hint: "Lähettää tämän tuotteen valmistaja- ja tuotetunnuksen CSA Distributed Compliance Ledgeriin (on.dcl.csa-iot.org). Mitään ei lähetetä ilman napsautusta."
+  ok: "Päivitetty CSA DCL:n tiedoilla."
+  none: "CSA DCL:ssä ei ole tietoja tälle valmistaja- ja tuotetunnukselle."
+  error: "CSA DCL:ään ei saatu yhteyttä."
