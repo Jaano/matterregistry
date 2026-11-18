@@ -7,41 +7,44 @@
 <span class="ml-1 text-[10px] text-gray-400">({{ source.label }})</span>
 {%- endif -%}
 {%- endmacro -%}
-<div class="max-w-2xl">
-  <div class="flex items-center gap-3 mb-6">
-    <a href="{{ url('/devices') }}" class="text-gray-400 hover:text-gray-600 text-sm">← {{ t.nav.devices }}</a>
-    <h1 class="text-2xl font-bold">{% if device %}{{ t.device.form.edit_title }}{% else %}{{ t.device.form.new_title }}{% endif %}</h1>
+<div class="{% if not device %}mr-new-device{% else %}max-w-2xl{% endif %}">
+  <div class="mb-6">
+    <a href="{{ url('/devices') }}" class="text-sm" style="color:var(--mr-primary)">← {{ t.nav.devices }}</a>
+    <h1 class="text-2xl font-bold mt-4">{% if device %}{{ t.device.form.edit_title }}{% else %}{{ t.device.form.new_title }}{% endif %}</h1>
+    {% if not device %}<p class="mt-2 text-sm" style="color:var(--mr-text-quiet)">{{ t.device.form.new_intro }}</p>{% endif %}
   </div>
 
 {% if not device %}
-  {# New-device flow: name + scan/manual tiles only. All other metadata
-     (vendor, product, room, status, transport, warranty, notes…) is filled
-     in afterwards on the device detail / edit page. #}
-  <form method="post" action="{{ url('/devices') }}" class="space-y-6">
-    <div class="bg-white rounded shadow p-6">
-      <label class="block text-sm font-medium text-gray-700 mb-1">{{ t.device.form.name_label }} <span class="text-red-500">*</span></label>
-      <input type="text" name="name" required autofocus
+  <form method="post" action="{{ url('/devices') }}">
+    <div class="mr-panel">
+      <h2 class="text-lg font-semibold">{{ t.device.form.basics_heading }}</h2>
+      <p class="text-sm mt-1 mb-6" style="color:var(--mr-text-quiet)">{{ t.device.form.basics_desc }}</p>
+      <label for="new-device-name" class="block text-sm font-medium mb-1">{{ t.device.form.name_label }} <span class="text-red-500">*</span></label>
+      <input id="new-device-name" type="text" name="name" required autofocus
              class="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
-    </div>
 
-    <div>
-      <h2 class="text-lg font-semibold text-gray-700 mb-1">{{ t.device.form.scan_heading }} <span class="text-sm font-normal text-gray-400">{{ t.device.form.scan_optional }}</span></h2>
-      <p class="text-sm text-gray-500 mb-4">{{ t.device.form.scan_desc }}</p>
+      <label for="new-device-product" class="block text-sm font-medium mt-5 mb-1">{{ t.device.form.product_picker_label }} {{ t.device.form.scan_optional }}</label>
+      <input id="new-device-product-search" type="search" autocomplete="off" placeholder="{{ t.device.form.product_search }}"
+             aria-label="{{ t.device.form.product_search }}" class="w-full border border-gray-300 rounded px-3 py-2 text-sm mb-2">
+      <select id="new-device-product" name="product_record_id" class="w-full border border-gray-300 rounded px-3 py-2 text-sm">
+        <option value="">{{ t.device.form.product_none }}</option>
+        {% for p in products %}<option value="{{ p.id }}">{{ p.vendor ~ ' - ' if p.vendor }}{{ p.name }}{{ ' (' ~ p.model ~ ')' if p.model }}</option>{% endfor %}
+      </select>
+      <p class="mt-2 text-xs"><a href="{{ url('/products/new') }}" style="color:var(--mr-primary)">{{ t.device.form.product_new_link }}</a></p>
+
+      <div class="mt-7 pt-5" style="border-top:1px solid var(--mr-border)">
+      <h2 class="text-lg font-semibold mb-1">{{ t.device.form.scan_heading }} <span class="text-sm font-normal" style="color:var(--mr-text-quiet)">{{ t.device.form.scan_optional }}</span></h2>
+      <p class="text-sm mb-4" style="color:var(--mr-text-quiet)">{{ t.device.form.scan_desc }}</p>
       {% set scan_mode = "new" %}
       {% include "devices/_scan_block.html" %}
+      </div>
     </div>
 
     <input type="hidden" name="qr_payload" id="new-device-qr-payload" value="">
 
-    <div class="flex gap-3 pt-2">
-      <button type="submit"
-              class="bg-blue-600 text-white px-5 py-2 rounded hover:bg-blue-700 text-sm font-medium">
-        {{ t.device.form.create_btn }}
-      </button>
-      <a href="{{ url('/devices') }}"
-         class="px-5 py-2 rounded border border-gray-300 text-sm hover:bg-gray-50">
-        {{ t.device.form.cancel }}
-      </a>
+    <div class="mr-form-actions">
+      <a href="{{ url('/devices') }}" class="mr-btn">{{ t.device.form.cancel }}</a>
+      <button type="submit" class="mr-btn mr-btn-primary">{{ t.device.form.create_btn }}</button>
     </div>
   </form>
 {% else %}
@@ -134,11 +137,12 @@
         {{ t.device.form.save_btn }}
       </button>
       <a href="{{ url('/devices/' + device.id) }}"
-         class="px-5 py-2 rounded border border-gray-300 text-sm hover:bg-gray-50">
+         class="mr-control px-5 py-2 rounded border border-gray-300 text-sm hover:bg-gray-50">
         {{ t.device.form.cancel }}
       </a>
     </div>
   </form>
 {% endif %}
 </div>
+{% if not device %}<script src="{{ url('/static/product_picker.js') }}" defer></script>{% endif %}
 {% endblock %}

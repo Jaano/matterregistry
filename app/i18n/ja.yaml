@@ -5,6 +5,15 @@ nav:
   settings: "設定"
   network: "ネットワーク"
 
+quick_search:
+  title: "クイック検索"
+  close: "検索を閉じる"
+  hint: "矢印キーで選択し、Enter で開き、Esc で閉じます。"
+  devices: "デバイス"
+  products: "製品"
+  pages: "ページ"
+  no_results: "一致するデバイスまたは製品がありません。"
+
 index:
   tagline: "Matter デバイスのペアリング情報を保管する帯域外レジストリ。"
 
@@ -13,7 +22,7 @@ device:
     title: "デバイス"
     new_btn: "+ 新規デバイス"
     sync_all_aria: "すべての連携を同期"
-    search_label: "検索"
+    filter_label: "フィルター"
     search_placeholder: "名前、メーカー、部屋、メモ…"
     status_label: "ステータス"
     vendor_label: "メーカー"
@@ -25,7 +34,6 @@ device:
     status_retired: "使用終了"
     status_spare: "予備"
     status_hidden: "非表示"
-    clear_filters: "すべてクリア"
     col_name: "名前"
     col_vendor: "メーカー"
     col_product: "製品"
@@ -35,10 +43,17 @@ device:
     empty: "デバイスはまだありません。"
     empty_add: "最初のデバイスを追加 →"
     filtered_empty: "現在のフィルターに一致するデバイスはありません。"
-    clear_all_filters: "すべてのフィルターをクリア"
     matching: "フィルターに一致"
     print_qr_sheet_btn: "QR シートを印刷"
     print_qr_sheet_title: "非表示のものも含め、コードが保存されているすべてのデバイスの QR ステッカーを印刷"
+
+    protocol_label: "プロトコル"
+    all_protocols: "すべてのプロトコル"
+    view_label: "表示"
+    table_view: "表"
+    card_view: "カード"
+    count_label: "デバイス"
+    count_one: "デバイス"
 
   form:
     new_title: "新規デバイス"
@@ -62,6 +77,12 @@ device:
     transport_label: "トランスポート"
     warranty_label: "保証期限"
     notes_label: "メモ（Markdown）"
+
+    new_intro: "名前から始めます。残りはデバイスのページで追加できます。"
+    basics_heading: "デバイスの基本情報"
+    basics_desc: "名前のみ必須です。"
+    product_none: "製品は後で選択"
+    product_search: "製品カタログを検索"
 
   detail:
     scan_btn: "スキャン / コード追加"
@@ -239,6 +260,7 @@ scan_block:
 
 settings:
   title: "設定"
+  subtitle: "アプリの設定と任意の補足情報源を確認します。"
   tab_general: "一般"
   tab_integrations: "連携"
   import_success: "インポート完了 -"
@@ -307,6 +329,11 @@ settings:
 
   integrations:
     title: "連携"
+    heading: "外部連携"
+    description: "設定済みの情報源が登録情報を補完します。同期では外部システムのキャッシュのみを読み取ります。"
+    no_url: "URL が設定されていません"
+    supervisor_short: "Supervisor トークンを使用中"
+    mdns_unconfigured: "検出は無効です"
     cap_heading: "機能"
     cap_creates: "デバイスを作成"
     cap_updates: "デバイスを更新"
@@ -345,6 +372,8 @@ settings:
     sync_error: "エラー"
     sync_done: "完了 - 作成 <strong>{created}</strong>、更新 <strong>{updated}</strong>、変更なし <strong>{unchanged}</strong>。"
     sync_done_otbr: "完了 - ネットワーク <strong>{network}</strong> を保存しました。"
+    auto_locate: "未識別の Thread デバイスを自動的に特定する"
+    auto_locate_hint: "ネットワークにレジストリが名前を付けられない Thread デバイスが表示されたとき、ルーターを 1 台ずつ照会してどのデバイスか調べます。Thread メッシュに読み取り専用の診断リクエストを少数送信します。"
     status:
       connected: "接続済み"
       connecting: "接続中"
@@ -357,13 +386,12 @@ product:
   list:
     title: "製品"
     new_btn: "+ 新しい製品"
-    search_label: "検索"
+    filter_label: "フィルター"
     search_placeholder: "名前、メーカー、モデル、VID/PID、説明…"
     protocol_label: "プロトコル"
     vendor_label: "メーカー"
     all_protocols: "すべてのプロトコル"
     all_vendors: "すべてのメーカー"
-    clear_filters: "すべてクリア"
     col_thumb: "アイコン"
     col_product: "製品"
     col_vendor: "メーカー"
@@ -374,8 +402,11 @@ product:
     empty: "まだ製品がありません。"
     empty_add: "製品を作成 →"
     filtered_empty: "現在のフィルターに一致する製品がありません。"
-    clear_all_filters: "すべてのフィルターをクリア"
     matching: "件がフィルターに一致"
+
+    view_label: "製品の表示"
+    table_view: "表"
+    card_view: "カード"
 
   form:
     new_title: "新しい製品"
@@ -476,6 +507,12 @@ modal:
   delete: "削除"
 
 network:
+  thread_link_legend: "Thread リンク"
+  weak_thread_link_legend: "弱い Thread リンク"
+  wifi_link_legend: "Wi-Fi リンク"
+  diagram_desc: "保存された接続を部屋ごとに表示します。"
+  unassigned_room: "未割り当て"
+  empty_nodes: "保存されたトポロジーにノードがありません。"
   title: "ネットワーク"
   topology_heading: "トポロジー"
   empty_topology: "トポロジーはまだありません。Matter サーバーが対応していれば、同期後に表示されます。"
@@ -486,19 +523,25 @@ network:
   col_network: "ネットワーク"
   col_address: "アドレス"
   connections_heading: "リンク"
+  mesh_view: "メッシュ"
+  empty_links: "保存されたトポロジーに接続はありません。"
   col_from: "送信元"
   col_to: "宛先"
   col_strength: "強度"
-  col_signal: "信号"
+  col_link_quality: "リンク品質"
+  col_rssi: "RSSI"
   border_routers_heading: "Thread ボーダールーター (mDNS)"
   empty_border_routers: "見つかりません。mDNS 検出が必要です。"
   col_device: "デバイス"
   col_thread_version: "Thread"
   commissionable_heading: "コミッショニング受付中 (mDNS)"
+  discoverable_heading: "検出可能・コミッショニング待機外 (mDNS)"
   empty_commissionable: "コミッショニング待機を通知している Matter デバイスはありません。"
   col_vid_pid: "VID / PID"
   col_discriminator: "ディスクリミネーター"
   col_mode: "モード"
+  mode_basic: "基本"
+  mode_enhanced: "拡張"
 
 dcl:
   lookup_btn: "CSA DCL で検索"

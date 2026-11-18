@@ -5,6 +5,15 @@ nav:
   settings: "Seaded"
   network: "Võrk"
 
+quick_search:
+  title: "Kiire otsing"
+  close: "Sulge otsing"
+  hint: "Valimiseks kasuta nooleklahve. Avamiseks vajuta Enter. Sulgemiseks vajuta Esc."
+  devices: "Seadmed"
+  products: "Tooted"
+  pages: "Lehed"
+  no_results: "Sobivaid seadmeid ega tooteid ei leitud."
+
 index:
   tagline: "Register Matter seadmete sidumisinfo jaoks."
 
@@ -13,7 +22,7 @@ device:
     title: "Seadmed"
     new_btn: "+ Uus seade"
     sync_all_aria: "Sünkrooni kõik integratsioonid"
-    search_label: "Otsing"
+    filter_label: "Filter"
     search_placeholder: "Nimi, tootja, ruum, märkmed…"
     status_label: "Olek"
     vendor_label: "Tootja"
@@ -25,7 +34,6 @@ device:
     status_retired: "Kõrvaldatud"
     status_spare: "Varus"
     status_hidden: "Peidetud"
-    clear_filters: "Tühista kõik"
     col_name: "Nimi"
     col_vendor: "Tootja"
     col_product: "Toode"
@@ -35,10 +43,17 @@ device:
     empty: "Seadmeid veel pole."
     empty_add: "Lisa oma esimene seade →"
     filtered_empty: "Ükski seade ei vasta praegustele filtritele."
-    clear_all_filters: "Tühista kõik filtrid"
     matching: "vastavad filtritele"
     print_qr_sheet_btn: "Prindi QR-leht"
     print_qr_sheet_title: "Prindi QR-kleebised kõigile salvestatud koodiga seadmetele, sealhulgas peidetutele"
+
+    protocol_label: "Protokoll"
+    all_protocols: "Kõik protokollid"
+    view_label: "Vaade"
+    table_view: "Tabel"
+    card_view: "Kaardid"
+    count_label: "seadet"
+    count_one: "seade"
 
   form:
     new_title: "Uus seade"
@@ -62,6 +77,12 @@ device:
     transport_label: "Transport"
     warranty_label: "Garantii lõpeb"
     notes_label: "Märkmed (markdown)"
+
+    new_intro: "Alusta nimest. Lisa ülejäänu seadme lehel."
+    basics_heading: "Seadme põhiandmed"
+    basics_desc: "Nõutud on ainult nimi."
+    product_none: "Vali toode hiljem"
+    product_search: "Otsi tootekataloogist"
 
   detail:
     scan_btn: "Skanni / lisa kood"
@@ -239,6 +260,7 @@ scan_block:
 
 settings:
   title: "Seaded"
+  subtitle: "Vaata üle rakenduse eelistused ja valikulised lisateabe allikad."
   tab_general: "Üldine"
   tab_integrations: "Integratsioonid"
   import_success: "Import lõpetatud -"
@@ -307,6 +329,11 @@ settings:
 
   integrations:
     title: "Integratsioonid"
+    heading: "Välised integratsioonid"
+    description: "Seadistatud allikad täiendavad registrikirjeid. Sünkroonimine loeb ainult väliste süsteemide vahemälust."
+    no_url: "URL pole seadistatud"
+    supervisor_short: "Kasutatakse Supervisori tokenit"
+    mdns_unconfigured: "Tuvastus on keelatud"
     cap_heading: "Võimalused"
     cap_creates: "loob seadmeid"
     cap_updates: "uuendab seadmeid"
@@ -345,6 +372,8 @@ settings:
     sync_error: "Viga"
     sync_done: "Valmis - loodud <strong>{created}</strong>, uuendatud <strong>{updated}</strong>, muutmata <strong>{unchanged}</strong>."
     sync_done_otbr: "Valmis - võrk <strong>{network}</strong> salvestatud."
+    auto_locate: "Tuvasta tundmatud Thread-seadmed automaatselt"
+    auto_locate_hint: "Kui võrgus on Thread-seade, mida register ei oska nimetada, päritakse ruutereid ükshaaval, et leida vastav seade. Saadab Thread-võrku mõned kirjutuskaitstud diagnostikapäringud."
     status:
       connected: "ühendatud"
       connecting: "ühendumine"
@@ -357,13 +386,12 @@ product:
   list:
     title: "Tooted"
     new_btn: "+ Uus toode"
-    search_label: "Otsi"
+    filter_label: "Filter"
     search_placeholder: "Nimi, tootja, mudel, VID/PID, kirjeldus…"
     protocol_label: "Protokoll"
     vendor_label: "Tootja"
     all_protocols: "Kõik protokollid"
     all_vendors: "Kõik tootjad"
-    clear_filters: "Tühjenda kõik"
     col_thumb: "Ikoon"
     col_product: "Toode"
     col_vendor: "Tootja"
@@ -374,8 +402,11 @@ product:
     empty: "Tooteid pole veel."
     empty_add: "Loo toode →"
     filtered_empty: "Ükski toode ei vasta praegustele filtritele."
-    clear_all_filters: "Tühjenda kõik filtrid"
     matching: "vastet filtritele"
+
+    view_label: "Tootevaade"
+    table_view: "Tabel"
+    card_view: "Kaardid"
 
   form:
     new_title: "Uus toode"
@@ -476,6 +507,12 @@ modal:
   delete: "Kustuta"
 
 network:
+  thread_link_legend: "Thread-ühendus"
+  weak_thread_link_legend: "Nõrgem Thread-ühendus"
+  wifi_link_legend: "Wi-Fi-ühendus"
+  diagram_desc: "Salvestatud ühendused ruumide kaupa."
+  unassigned_room: "Määramata"
+  empty_nodes: "Salvestatud topoloogias pole sõlmi."
   title: "Võrk"
   topology_heading: "Topoloogia"
   empty_topology: "Topoloogiat pole veel. See ilmub sünkroonimise järel, kui Matteri server seda toetab."
@@ -486,19 +523,25 @@ network:
   col_network: "Võrk"
   col_address: "Aadress"
   connections_heading: "Ühendused"
+  mesh_view: "Võrguskeem"
+  empty_links: "Salvestatud topoloogias pole ühendusi."
   col_from: "Allikas"
   col_to: "Siht"
   col_strength: "Tugevus"
-  col_signal: "Signaal"
+  col_link_quality: "Ühenduse kvaliteet"
+  col_rssi: "RSSI"
   border_routers_heading: "Thread'i Border Routerid (mDNS)"
   empty_border_routers: "Ühtegi ei leitud. Nõuab mDNS-tuvastust."
   col_device: "Seade"
   col_thread_version: "Thread"
   commissionable_heading: "Valmis seadistamiseks (mDNS)"
+  discoverable_heading: "Tuvastatav, pole seadistamiseks valmis (mDNS)"
   empty_commissionable: "Ükski Matteri seade ei teata valmisolekust seadistamiseks."
   col_vid_pid: "VID / PID"
   col_discriminator: "Diskriminaator"
   col_mode: "Režiim"
+  mode_basic: "Tavaline"
+  mode_enhanced: "Täiustatud"
 
 dcl:
   lookup_btn: "Otsi CSA DCL-ist"

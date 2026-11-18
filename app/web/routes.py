@@ -72,11 +72,33 @@ def _ctx(request: Request, **kwargs) -> dict:
         request.cookies.get("mr_lang", ""),
         request.headers.get("accept-language", ""),
     )
+    path = request.url.path
+    ingress = getattr(request.state, "ingress_path", "").rstrip("/")
+    if ingress and path.startswith(ingress + "/"):
+        path = path[len(ingress) :]
+    active_nav = (
+        "network"
+        if path.startswith("/network")
+        else "settings"
+        if path.startswith("/settings")
+        else "products"
+        if path.startswith("/products")
+        else "devices"
+    )
+    configured_integrations = {
+        "ms": bool(getattr(request.app.state, "matter_client", None)),
+        "otbr": bool(getattr(request.app.state, "otbr_client", None)),
+        "ha": bool(getattr(request.app.state, "ha_client", None)),
+        "mdns": bool(getattr(request.app.state, "mdns_client", None)),
+    }
     return {
         "request": request,
         "url": lambda p: _url(request, p),
         "t": get_t(lang),
         "lang": lang,
+        "active_nav": active_nav,
+        "configured_integrations": configured_integrations,
+        "any_integration_configured": any(configured_integrations.values()),
         **kwargs,
     }
 
@@ -103,6 +125,8 @@ def device_list(
     status: str = "",
     vendor: str = "",
     room: str = "",
+    protocol: str = "",
+    view: str = "",
 ):
     stmt = select(Device).join(Product)
     if q:
@@ -126,8 +150,10 @@ def device_list(
         stmt = stmt.where(Product.vendor == vendor)
     if room:
         stmt = stmt.where(Device.room == room)
+    if protocol:
+        stmt = stmt.where(Product.protocol == protocol)
 
-    devices = session.exec(stmt).all()
+    devices = session.exec(stmt.order_by(col(Device.name))).all()
 
     # Comms flags - batch-load credentials to avoid N+1
     _ONBOARDING_TYPES = {PropertyType.qr_payload, PropertyType.manual_code}
@@ -152,18 +178,6 @@ def device_list(
     vendors = sorted({d.vendor for d in all_devices if d.vendor})
     rooms = sorted({d.room for d in all_devices if d.room})
 
-    any_integration_configured = bool(
-        getattr(request.app.state, "matter_client", None)
-        or getattr(request.app.state, "otbr_client", None)
-        or getattr(request.app.state, "ha_client", None)
-        or getattr(request.app.state, "mdns_client", None)
-    )
-
-    from ..integrations.ha.client import HACoreClient
-    from ..integrations.matter_server.server_client import MatterServerClient
-    from ..integrations.mdns.client import MdnsClient
-    from ..integrations.otbr.client import OTBRClient
-
     is_htmx = request.headers.get("HX-Request") == "true"
 
     # A.2: bulk QR sticker sheet, printed in place from this page. Only the
@@ -184,6 +198,9 @@ def device_list(
             _onb = compute_onboarding_display(_d, props_by_device.get(_d.id, []))
             if _onb["qr_payload"]:
                 qr_sheet_tiles.append({"device": _d, **_onb})
+    print_available = bool(qr_sheet_tiles)
+    if is_htmx:
+        print_available = request.headers.get("HX-Print-Available") == "true"
 
     ctx = _ctx(
         request,
@@ -195,25 +212,79 @@ def device_list(
         active_status=status,
         active_vendor=vendor,
         active_room=room,
-        any_filter=bool(q or status or vendor or room),
-        any_integration_configured=any_integration_configured,
+        active_protocol=protocol,
+        active_view=view if view in {"table", "cards"} else "",
+        protocols=list(DeviceProtocol),
+        any_filter=bool(q or status or vendor or room or protocol),
+        print_available=print_available,
         qr_sheet_tiles=qr_sheet_tiles,
-        ms_long_name=MatterServerClient.long_name,
-        otbr_long_name=OTBRClient.long_name,
-        ha_long_name=HACoreClient.long_name,
-        mdns_long_name=MdnsClient.long_name,
     )
     if is_htmx:
         return templates.TemplateResponse(request, "devices/_rows.html", ctx)
     return templates.TemplateResponse(request, "devices/list.html", ctx)
 
 
+@router.get("/quick-search", response_class=HTMLResponse)
+def quick_search(
+    request: Request,
+    session: Session = Depends(get_session),
+    q: str = "",
+):
+    """Search visible device names and Product names for the command dialog."""
+    query = q.strip()[:100]
+    devices: list[Device] = []
+    products: list[Product] = []
+    if query:
+        pattern = f"%{query}%"
+        devices = list(
+            session.exec(
+                select(Device)
+                .join(Product)
+                .where(
+                    col(Device.status) != DeviceStatus.hidden,
+                    or_(
+                        col(Device.name).ilike(pattern),
+                        col(Device.room).ilike(pattern),
+                        col(Product.vendor).ilike(pattern),
+                        col(Product.name).ilike(pattern),
+                    ),
+                )
+                .order_by(col(Device.name))
+                .limit(8)
+            ).all()
+        )
+        products = list(
+            session.exec(
+                select(Product)
+                .where(
+                    or_(
+                        col(Product.name).ilike(pattern),
+                        col(Product.vendor).ilike(pattern),
+                        col(Product.model).ilike(pattern),
+                    )
+                )
+                .order_by(col(Product.name))
+                .limit(5)
+            ).all()
+        )
+    return templates.TemplateResponse(
+        request,
+        "_quick_search_results.html",
+        _ctx(request, q=query, devices=devices, products=products),
+    )
+
+
 @router.get("/devices/new", response_class=HTMLResponse)
-def device_new(request: Request):
+def device_new(request: Request, session: Session = Depends(get_session)):
     return templates.TemplateResponse(
         request,
         "devices/form.html",
-        _ctx(request, device=None, statuses=list(DeviceStatus)),
+        _ctx(
+            request,
+            device=None,
+            statuses=list(DeviceStatus),
+            products=session.exec(select(Product).order_by(col(Product.name))).all(),
+        ),
     )
 
 
@@ -227,6 +298,7 @@ def device_create(
     status: str = Form("active"),
     warranty_until: str = Form(""),
     qr_payload: str = Form(""),
+    product_record_id: str = Form(""),
     network_type: list[str] = Form(default=[]),
     session: Session = Depends(get_session),
 ):
@@ -238,11 +310,12 @@ def device_create(
             wu = date_type.fromisoformat(warranty_until.strip())
         except ValueError:
             wu = None
-    # No vendor/product/model fields here - the new-device flow is name +
-    # scan/manual tiles only (A.15). The Device.__init__ compatibility bridge
-    # gives it a placeholder Product; a subsequent scan resolves the real one.
+    selected_product = session.get(Product, product_record_id) if product_record_id else None
+    # A blank selection keeps the existing placeholder Product flow. A later
+    # scan can resolve a catalog Product from the code.
     device = Device(
         name=name,
+        **({"product_record_id": selected_product.id} if selected_product else {}),
         room=room or None,
         serial=serial or None,
         notes=notes or None,
@@ -467,7 +540,7 @@ def device_detail(id: str, request: Request, session: Session = Depends(get_sess
 
     # Map stored integration slugs → human display names, matching the
     # curated sub-section headers ("Matter Server", "Home Assistant", …), and
-    # → their CSS icon class so each block header can show its icon.
+    # → their CSS icon class for block headers and Device action buttons.
     _integration_classes = (MatterServerClient, OTBRClient, HACoreClient, MdnsClient)
     _integration_names = {cls.slug: cls.long_name for cls in _integration_classes}
     integration_icons = {cls.slug: cls.icon for cls in _integration_classes}
@@ -636,6 +709,8 @@ def device_update(
 
 @router.delete("/devices/{id}", response_class=HTMLResponse)
 def device_delete(id: str, request: Request, session: Session = Depends(get_session)):
+    from ..services import delete_device
+
     device = session.get(Device, id)
     if device:
         audit_log(
@@ -644,7 +719,7 @@ def device_delete(id: str, request: Request, session: Session = Depends(get_sess
             entity=f"device:{id}",
             reason="web.device_delete",
         )
-        session.delete(device)
+        delete_device(session, device)
         session.commit()
     resp = HTMLResponse("")
     resp.headers["HX-Redirect"] = _url(request, "/devices")
@@ -695,11 +770,28 @@ def _apply_product_links(
         position += 1
 
 
+def _wifi_lqi(rssi: int | float) -> int:
+    """Map Wi-Fi RSSI in dBm to the Network mesh's four link grades."""
+    if rssi >= -67:
+        return 3
+    if rssi >= -75:
+        return 2
+    if rssi >= -80:
+        return 1
+    return 0
+
+
 @router.get("/network", response_class=HTMLResponse)
-def network_view(request: Request, session: Session = Depends(get_session)):
-    """Read-only network view: stored Matter topology plus live mDNS inventory."""
+def network_view(request: Request, session: Session = Depends(get_session), view: str = "mesh"):
+    """Read-only network view of stored Matter topology."""
     from ..integrations.matter_server.server_client import load_topology
-    from ..integrations.matter_server.topology import node_label, node_network_name, role_label
+    from ..integrations.matter_server.topology import (
+        INFRASTRUCTURE_LINK_INTEGRATIONS,
+        infrastructure_identity,
+        node_label,
+        node_network_name,
+        role_label,
+    )
 
     topology = load_topology(session)
 
@@ -719,65 +811,221 @@ def network_view(request: Request, session: Session = Depends(get_session)):
     except (ValueError, OverflowError, OSError):
         pass
 
-    devices_by_node: dict[int, tuple[str, str]] = {}
-    for node_id, device_id, name in session.exec(
-        select(DeviceFabricMembership.node_id, Device.id, Device.name).join(
+    devices_by_node: dict[int, tuple[str, str, str | None]] = {}
+    for node_id, device_id, name, room in session.exec(
+        select(DeviceFabricMembership.node_id, Device.id, Device.name, Device.room).join(
             Device, col(Device.id) == col(DeviceFabricMembership.device_id)
         )
     ).all():
-        devices_by_node[node_id] = (device_id, name)
+        devices_by_node[node_id] = (device_id, name, room)
 
     def _name(node_id: int) -> str | None:
         found = devices_by_node.get(node_id)
         return found[1] if found else None
 
     nodes_by_id = {n.get("id"): n for n in (topology or {}).get("nodes") or []}
+
+    # Thread nodes with no Matter fabric membership (HomeKit-over-Thread bulbs,
+    # nodes whose membership is missing) are named through the Thread extended
+    # address stored on a Device. Read-only: the lookup uses persisted data only.
+    devices_by_ext: dict[str, tuple[str, str, str | None]] = {}
+    pending_ext = {
+        str(n["id"]): n["ext_address"]
+        for n in nodes_by_id.values()
+        if n.get("ext_address")
+        and n.get("kind") not in {"border_router", "wifi_ap"}
+        and not (n.get("kind") == "matter" and n.get("node_id") in devices_by_node)
+    }
+    if pending_ext:
+        from ..integrations.correlate import AddressIndex
+
+        address_index = AddressIndex(session)
+        for node_key, ext in pending_ext.items():
+            owner_id = address_index.match(macs=[ext])
+            owner = session.get(Device, owner_id) if owner_id else None
+            if owner is not None:
+                devices_by_ext[node_key] = (owner.id, owner.name, owner.room)
+
+    devices_by_infrastructure: dict[tuple[str, str], tuple[str, str, str | None]] = {}
+    for infra_link in session.exec(
+        select(DeviceLink).where(
+            col(DeviceLink.integration).in_(INFRASTRUCTURE_LINK_INTEGRATIONS.values())
+        )
+    ).all():
+        owner = session.get(Device, infra_link.device_id)
+        if owner is not None:
+            devices_by_infrastructure[(infra_link.integration, infra_link.external_id)] = (
+                owner.id,
+                owner.name,
+                owner.room,
+            )
+
+    def _resolved(n: dict) -> tuple[str, str, str | None] | None:
+        if n.get("kind") == "matter" and n.get("node_id") in devices_by_node:
+            return devices_by_node[n["node_id"]]
+        identity = infrastructure_identity(n)
+        if identity is not None:
+            return devices_by_infrastructure.get(identity)
+        return devices_by_ext.get(str(n.get("id")))
+
+    names_by_id = {}
+    nodes_by_name: dict[str, list[dict]] = {}
+    for n in nodes_by_id.values():
+        found = _resolved(n)
+        name = found[1] if found else node_label(n, _name)
+        names_by_id[n.get("id")] = name
+        nodes_by_name.setdefault(name, []).append(n)
+    for name, same_name in nodes_by_name.items():
+        if len(same_name) < 2:
+            continue
+        for number, n in enumerate(
+            sorted(
+                same_name,
+                key=lambda node: (
+                    str(node.get("bssid") or node.get("ext_address") or node.get("id")).casefold(),
+                    str(node.get("id")),
+                ),
+            ),
+            start=1,
+        ):
+            names_by_id[n.get("id")] = f"{name} ({number})"
+
+    def _label(n: dict) -> str:
+        return names_by_id[n.get("id")]
+
     node_rows = []
     for n in nodes_by_id.values():
-        found = devices_by_node.get(n.get("node_id")) if n.get("kind") == "matter" else None
+        found = _resolved(n)
+        kind, role = n.get("kind"), n.get("role")
+        if kind == "border_router":
+            icon_role, role_name = "border_router", "Border Router"
+        elif kind == "wifi_ap":
+            icon_role, role_name = "wifi_ap", "Wi-Fi access point"
+        elif role in {"router", "leader", "reed"}:
+            icon_role, role_name = "router", role_label(role) or "Router"
+        elif role in {"end_device", "sleepy_end_device", "station"}:
+            icon_role, role_name = role, role_label(role) or "Device"
+        else:
+            icon_role, role_name = "unknown", role_label(role) or "Unknown role"
         node_rows.append(
             {
-                "label": node_label(n, _name),
+                "label": _label(n),
+                "id": str(n.get("id")),
                 "device_id": found[0] if found else None,
-                "kind": n.get("kind"),
-                "role": role_label(n.get("role")),
+                "room": found[2] if found and found[2] else _t(request).network.unassigned_room,
+                "kind": kind,
+                "role": role_name,
+                "icon_role": icon_role,
                 "network": node_network_name(n),
                 "address": n.get("ext_address") or n.get("bssid"),
             }
         )
+    device_ids_by_node = {n["id"]: n["device_id"] for n in node_rows}
     link_rows = []
     for c in (topology or {}).get("connections") or []:
         src, dst = nodes_by_id.get(c.get("source")), nodes_by_id.get(c.get("target"))
         if src is None or dst is None:
             continue
-        direction = c.get("source_to_target") or {}
-        signal = ", ".join(
-            part
-            for part in (
-                f"LQI {direction['lqi']}" if direction.get("lqi") is not None else "",
-                f"RSSI {direction['rssi']} dBm" if direction.get("rssi") is not None else "",
-            )
-            if part
+        network = c.get("network")
+        readings = (c.get("source_to_target"), c.get("target_to_source"))
+        rssi = max(
+            (
+                reading["rssi"]
+                for reading in readings
+                if isinstance(reading, dict) and type(reading.get("rssi")) in (int, float)
+            ),
+            default=None,
         )
+        if network == "wifi":
+            lqi_level = _wifi_lqi(rssi) if rssi is not None else None
+        else:
+            lqi = max(
+                (
+                    reading["lqi"]
+                    for reading in readings
+                    if isinstance(reading, dict)
+                    and type(reading.get("lqi")) is int
+                    and reading["lqi"] >= 0
+                ),
+                default=None,
+            )
+            lqi_level = min(lqi, 3) if lqi is not None else None
         link_rows.append(
             {
-                "source": node_label(src, _name),
-                "target": node_label(dst, _name),
-                "network": c.get("network"),
-                "strength": c.get("strength") or "unknown",
-                "signal": signal,
+                "source": _label(src),
+                "target": _label(dst),
+                "source_id": str(c.get("source")),
+                "target_id": str(c.get("target")),
+                "source_device_id": device_ids_by_node.get(str(c.get("source"))),
+                "target_device_id": device_ids_by_node.get(str(c.get("target"))),
+                "network": network,
+                "lqi_level": lqi_level,
+                "rssi": rssi,
             }
         )
 
-    mdns = getattr(request.app.state, "mdns_client", None)
-    commissionable = []
-    for rec in mdns.commissionable_devices() if mdns else []:
-        vid, pid = rec.get("vendor_id"), rec.get("product_id")
-        vid_pid = f"0x{vid:04X}" if vid is not None else ""
-        if vid is not None and pid is not None:
-            vid_pid += f" / 0x{pid:04X}"
-        mode = {1: "basic", 2: "enhanced"}.get(rec.get("commissioning_mode"), "")
-        commissionable.append({**rec, "vid_pid": vid_pid, "mode": mode})
+    room_map: dict[str, list[dict]] = {}
+    for node in node_rows:
+        room_map.setdefault(node["room"], []).append(node)
+    room_by_node = {node["id"]: node["room"] for node in node_rows}
+    room_link_count = dict.fromkeys(room_map, 0)
+    for link in link_rows:
+        source_room = room_by_node[link["source_id"]]
+        target_room = room_by_node[link["target_id"]]
+        if source_room != target_room:
+            room_link_count[source_room] += 1
+            room_link_count[target_room] += 1
+    readings_by_node: dict[str, list[int]] = {node["id"]: [] for node in node_rows}
+    for connection in (topology or {}).get("connections") or []:
+        if (
+            connection.get("source") not in nodes_by_id
+            or connection.get("target") not in nodes_by_id
+        ):
+            continue
+        for endpoint, direction in (
+            ("source", "source_to_target"),
+            ("target", "target_to_source"),
+        ):
+            node_readings = readings_by_node.get(str(connection.get(endpoint)))
+            directional_reading = connection.get(direction) or {}
+            rssi = (
+                directional_reading.get("rssi") if isinstance(directional_reading, dict) else None
+            )
+            if node_readings is not None and isinstance(rssi, int) and not isinstance(rssi, bool):
+                node_readings.append(rssi)
+
+    room_rssi: dict[str, float | None] = {}
+    for room, nodes in room_map.items():
+        # Give each measured device equal weight, regardless of its link count.
+        device_averages = [
+            sum(readings_by_node[node["id"]]) / len(readings_by_node[node["id"]])
+            for node in nodes
+            if readings_by_node[node["id"]]
+        ]
+        room_rssi[room] = sum(device_averages) / len(device_averages) if device_averages else None
+
+    def _signal_rank(room: str) -> tuple[bool, float]:
+        average = room_rssi[room]
+        return average is None, -average if average is not None else 0
+
+    ranked_by_links = sorted(
+        room_map,
+        key=lambda room: (
+            -room_link_count[room],
+            *_signal_rank(room),
+            -len(room_map[room]),
+            room,
+        ),
+    )
+    center_room = ranked_by_links[0] if ranked_by_links else None
+    outer_rooms = sorted(
+        (room for room in room_map if room != center_room),
+        key=lambda room: (*_signal_rank(room), -len(room_map[room]), room),
+    )
+    room_groups = [
+        {"name": room, "nodes": room_map[room]}
+        for room in ([center_room] if center_room is not None else []) + outer_rooms
+    ]
 
     return templates.TemplateResponse(
         request,
@@ -787,9 +1035,9 @@ def network_view(request: Request, session: Session = Depends(get_session)):
             has_topology=topology is not None,
             collected_at=collected_at,
             node_rows=node_rows,
+            room_groups=room_groups,
             link_rows=link_rows,
-            border_routers=mdns.border_routers() if mdns else [],
-            commissionable=commissionable,
+            active_view=view if view in {"mesh", "table"} else "mesh",
         ),
     )
 
@@ -801,7 +1049,10 @@ def product_list(
     q: str = "",
     protocol: str = "",
     vendor: str = "",
+    view: str = "",
 ):
+    from ..services import product_vid_pid_clauses
+
     stmt = select(Product)
     if q:
         pattern = f"%{q}%"
@@ -811,6 +1062,7 @@ def product_list(
                 col(Product.vendor).ilike(pattern),
                 col(Product.model).ilike(pattern),
                 col(Product.description).ilike(pattern),
+                *product_vid_pid_clauses(q),
             )
         )
     if protocol:
@@ -840,6 +1092,7 @@ def product_list(
         q=q,
         active_protocol=protocol,
         active_vendor=vendor,
+        active_view=view if view in {"table", "cards"} else "",
         any_filter=bool(q or protocol or vendor),
     )
     if is_htmx:
@@ -1473,6 +1726,28 @@ async def settings_import(
 # ── Integrations settings ─────────────────────────────────────────────────────
 
 
+@router.post("/settings/integrations/otbr/auto-locate")
+def otbr_auto_locate_set(
+    enabled: str = Form(""),
+    session: Session = Depends(get_session),
+):
+    """Save the OTBR auto-locate checkbox (an unchecked box posts no value)."""
+    from fastapi import Response
+
+    from ..integrations.settings_store import OTBR, OTBR_AUTO_LOCATE, set_bool
+
+    value = enabled.strip().lower() in {"1", "true", "on", "yes"}
+    set_bool(session, OTBR, OTBR_AUTO_LOCATE, value)
+    audit_log(
+        session,
+        action="settings.otbr_auto_locate",
+        entity="integration:otbr",
+        reason=f"web.settings:{'on' if value else 'off'}",
+    )
+    session.commit()
+    return Response(status_code=204)
+
+
 @router.get("/settings/integrations", response_class=HTMLResponse)
 def settings_integrations(request: Request, session: Session = Depends(get_session)):
     import os
@@ -1481,6 +1756,7 @@ def settings_integrations(request: Request, session: Session = Depends(get_sessi
     from ..integrations.matter_server.server_client import MatterServerClient
     from ..integrations.mdns.client import MdnsClient
     from ..integrations.otbr.client import OTBRClient
+    from ..integrations.settings_store import otbr_auto_locate_enabled
     from ..models import ThreadNetwork
 
     mc = getattr(request.app.state, "matter_client", None)
@@ -1594,6 +1870,7 @@ def settings_integrations(request: Request, session: Session = Depends(get_sessi
             otbr_last_synced_at=otbr_last_synced_at,
             otbr_capabilities=otbr_capabilities,
             otbr_networks=otbr_networks,
+            otbr_auto_locate=otbr_auto_locate_enabled(session),
             ha_long_name=HACoreClient.long_name,
             ha_short_name=HACoreClient.short_name,
             ha_url=ha_url,

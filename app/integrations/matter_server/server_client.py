@@ -700,8 +700,8 @@ TOPOLOGY_SCHEMA = 13
 TOPOLOGY_ROW_ID = "matter_server"
 
 
-def _store_topology(data: dict[str, Any]) -> None:
-    """Replace the stored topology snapshot with *data*."""
+def _store_topology(data: dict[str, Any], *, integration: Any = None) -> None:
+    """Store the graph, then project its identified infrastructure nodes."""
     from sqlmodel import Session
 
     from ...database import engine
@@ -718,6 +718,14 @@ def _store_topology(data: dict[str, Any]) -> None:
         session.add(row)
         session.commit()
 
+    from .infrastructure import project_infrastructure
+
+    with Session(engine) as session:
+        created = project_infrastructure(session, data)
+        if integration is not None:
+            integration.assert_capabilities(session, created=created)
+        session.commit()
+
 
 def load_topology(session: Any) -> dict[str, Any] | None:
     """Return the stored topology graph, or None when absent or empty."""
@@ -731,6 +739,20 @@ def load_topology(session: Any) -> dict[str, Any] | None:
     except ValueError:
         return None
     return data if isinstance(data, dict) and data.get("nodes") else None
+
+
+def project_saved_infrastructure() -> None:
+    """Backfill durable infrastructure from the last snapshot on startup."""
+    from sqlmodel import Session
+
+    from ...database import engine
+    from .infrastructure import project_infrastructure
+
+    with Session(engine) as session:
+        topology = load_topology(session)
+        if topology is not None:
+            project_infrastructure(session, topology)
+            session.commit()
 
 
 def _mesh_payload(
@@ -813,8 +835,9 @@ class MatterServerClient(PolledIntegration):
     async def _refresh_topology(self) -> None:
         """Store the server's cached network topology (schema 13).
 
-        Reads the server's own cache (never ``refresh=True``, which would query
-        every node), so it is safe on the sync path. Needs the typed client method.
+        Never requests ``refresh=True``, which would query every node.
+        The first getter call can still initiate server-side Border Router
+        discovery and probing. Needs the typed client method.
         """
         mc = self._mc
         getter = getattr(mc, "get_network_topology", None)
@@ -828,7 +851,7 @@ class MatterServerClient(PolledIntegration):
                 else topology
             )
             if isinstance(data, dict):
-                _store_topology(data)
+                _store_topology(data, integration=self)
         except Exception as exc:
             logger.debug("Matter Server topology unavailable: %s", exc)
 

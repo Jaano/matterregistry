@@ -89,6 +89,17 @@ else
   echo "── unit tests - skipped (pytest not in .venv) ──"
 fi
 
+# ── translation key parity ──────────────────────────────────────────────────
+run_step "translation key parity" "$VENV_PYTHON" scripts/check_translations.py
+
+# ── dependency-free network geometry tests ──────────────────────────────────
+if command -v node >/dev/null 2>&1; then
+  run_step "network geometry tests" node --test tests/js/network_geometry.test.js
+else
+  echo ""
+  echo "── network geometry tests - skipped (Node.js not installed) ──"
+fi
+
 # ── summary ──────────────────────────────────────────────────────────────────
 echo ""
 echo "══════════════════════════════════════"

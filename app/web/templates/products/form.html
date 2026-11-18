@@ -108,7 +108,7 @@
         {% if product %}{{ t.product.form.save_btn }}{% else %}{{ t.product.form.create_btn }}{% endif %}
       </button>
       <a href="{{ url('/products/' + product.id) if product else url('/products') }}"
-         class="px-5 py-2 rounded border border-gray-300 text-sm hover:bg-gray-50">
+         class="mr-control px-5 py-2 rounded border border-gray-300 text-sm hover:bg-gray-50">
         {{ t.product.form.cancel }}
       </a>
     </div>

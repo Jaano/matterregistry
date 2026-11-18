@@ -5,6 +5,15 @@ nav:
   settings: "Ustawienia"
   network: "Sieć"
 
+quick_search:
+  title: "Szybkie wyszukiwanie"
+  close: "Zamknij wyszukiwanie"
+  hint: "Użyj strzałek, aby wybrać. Naciśnij Enter, aby otworzyć, lub Esc, aby zamknąć."
+  devices: "Urządzenia"
+  products: "Produkty"
+  pages: "Strony"
+  no_results: "Nie znaleziono pasujących urządzeń ani produktów."
+
 index:
   tagline: "Zewnętrzny rejestr informacji o parowaniu urządzeń Matter."
 
@@ -13,7 +22,7 @@ device:
     title: "Urządzenia"
     new_btn: "+ Nowe urządzenie"
     sync_all_aria: "Synchronizuj wszystkie integracje"
-    search_label: "Szukaj"
+    filter_label: "Filtruj"
     search_placeholder: "Nazwa, producent, pokój, notatki…"
     status_label: "Status"
     vendor_label: "Producent"
@@ -25,7 +34,6 @@ device:
     status_retired: "Wycofane"
     status_spare: "Zapasowe"
     status_hidden: "Ukryte"
-    clear_filters: "Wyczyść wszystko"
     col_name: "Nazwa"
     col_vendor: "Producent"
     col_product: "Produkt"
@@ -35,10 +43,17 @@ device:
     empty: "Brak urządzeń."
     empty_add: "Dodaj swoje pierwsze urządzenie →"
     filtered_empty: "Żadne urządzenie nie pasuje do bieżących filtrów."
-    clear_all_filters: "Wyczyść wszystkie filtry"
     matching: "pasujące do filtrów"
     print_qr_sheet_btn: "Drukuj arkusz QR"
     print_qr_sheet_title: "Drukuj naklejki QR dla każdego urządzenia z zapisanym kodem, w tym ukrytych"
+
+    protocol_label: "Protokół"
+    all_protocols: "Wszystkie protokoły"
+    view_label: "Widok"
+    table_view: "Tabela"
+    card_view: "Karty"
+    count_label: "urządzeń"
+    count_one: "urządzenie"
 
   form:
     new_title: "Nowe urządzenie"
@@ -62,6 +77,12 @@ device:
     transport_label: "Transport"
     warranty_label: "Gwarancja wygasa"
     notes_label: "Notatki (markdown)"
+
+    new_intro: "Zacznij od nazwy. Resztę dodaj na stronie urządzenia."
+    basics_heading: "Podstawowe dane urządzenia"
+    basics_desc: "Wymagana jest tylko nazwa."
+    product_none: "Wybierz produkt później"
+    product_search: "Przeszukaj katalog produktów"
 
   detail:
     scan_btn: "Skanuj / dodaj kod"
@@ -239,6 +260,7 @@ scan_block:
 
 settings:
   title: "Ustawienia"
+  subtitle: "Sprawdź ustawienia aplikacji i opcjonalne źródła dodatkowych danych."
   tab_general: "Ogólne"
   tab_integrations: "Integracje"
   import_success: "Import zakończony -"
@@ -307,6 +329,11 @@ settings:
 
   integrations:
     title: "Integracje"
+    heading: "Integracje zewnętrzne"
+    description: "Skonfigurowane źródła uzupełniają wpisy w rejestrze. Synchronizacja odczytuje tylko pamięć podręczną systemów zewnętrznych."
+    no_url: "Nie skonfigurowano adresu URL"
+    supervisor_short: "Używany jest token Supervisora"
+    mdns_unconfigured: "Wykrywanie jest wyłączone"
     cap_heading: "Możliwości"
     cap_creates: "tworzy urządzenia"
     cap_updates: "aktualizuje urządzenia"
@@ -345,6 +372,8 @@ settings:
     sync_error: "Błąd"
     sync_done: "Gotowe - utworzono <strong>{created}</strong>, zaktualizowano <strong>{updated}</strong>, bez zmian <strong>{unchanged}</strong>."
     sync_done_otbr: "Gotowe - sieć <strong>{network}</strong> zapisana."
+    auto_locate: "Automatycznie identyfikuj nierozpoznane urządzenia Thread"
+    auto_locate_hint: "Gdy sieć pokazuje urządzenie Thread, którego rejestr nie potrafi nazwać, routery są odpytywane jeden po drugim, aby ustalić, które to urządzenie. Wysyła do sieci Thread kilka zapytań diagnostycznych tylko do odczytu."
     status:
       connected: "połączono"
       connecting: "łączenie"
@@ -357,13 +386,12 @@ product:
   list:
     title: "Produkty"
     new_btn: "+ Nowy produkt"
-    search_label: "Szukaj"
+    filter_label: "Filtruj"
     search_placeholder: "Nazwa, producent, model, VID/PID, opis…"
     protocol_label: "Protokół"
     vendor_label: "Producent"
     all_protocols: "Wszystkie protokoły"
     all_vendors: "Wszyscy producenci"
-    clear_filters: "Wyczyść wszystko"
     col_thumb: "Ikona"
     col_product: "Produkt"
     col_vendor: "Producent"
@@ -374,8 +402,11 @@ product:
     empty: "Brak produktów."
     empty_add: "Utwórz produkt →"
     filtered_empty: "Żaden produkt nie pasuje do bieżących filtrów."
-    clear_all_filters: "Wyczyść wszystkie filtry"
     matching: "pasujące do filtrów"
+
+    view_label: "Widok produktów"
+    table_view: "Tabela"
+    card_view: "Karty"
 
   form:
     new_title: "Nowy produkt"
@@ -476,6 +507,12 @@ modal:
   delete: "Usuń"
 
 network:
+  thread_link_legend: "Łącze Thread"
+  weak_thread_link_legend: "Słabsze łącze Thread"
+  wifi_link_legend: "Łącze Wi-Fi"
+  diagram_desc: "Zapisane połączenia pogrupowane według pomieszczeń."
+  unassigned_room: "Nieprzypisane"
+  empty_nodes: "Brak węzłów w zapisanej topologii."
   title: "Sieć"
   topology_heading: "Topologia"
   empty_topology: "Brak topologii. Pojawi się po synchronizacji, jeśli serwer Matter ją obsługuje."
@@ -486,19 +523,25 @@ network:
   col_network: "Sieć"
   col_address: "Adres"
   connections_heading: "Połączenia"
+  mesh_view: "Siatka"
+  empty_links: "W zapisanej topologii nie ma połączeń."
   col_from: "Od"
   col_to: "Do"
   col_strength: "Siła"
-  col_signal: "Sygnał"
+  col_link_quality: "Jakość połączenia"
+  col_rssi: "RSSI"
   border_routers_heading: "Routery graniczne Thread (mDNS)"
   empty_border_routers: "Nie znaleziono. Wymaga wykrywania mDNS."
   col_device: "Urządzenie"
   col_thread_version: "Thread"
   commissionable_heading: "Gotowe do parowania (mDNS)"
+  discoverable_heading: "Wykrywalne, niegotowe do parowania (mDNS)"
   empty_commissionable: "Żadne urządzenie Matter nie ogłasza gotowości do parowania."
   col_vid_pid: "VID / PID"
   col_discriminator: "Dyskryminator"
   col_mode: "Tryb"
+  mode_basic: "Podstawowy"
+  mode_enhanced: "Rozszerzony"
 
 dcl:
   lookup_btn: "Wyszukaj w CSA DCL"

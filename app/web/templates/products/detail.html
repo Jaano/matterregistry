@@ -31,9 +31,9 @@
   </div>
   <div class="grid grid-cols-3 gap-2 sm:flex sm:gap-2 sm:mt-1">
     <a href="{{ url('/products/' + product.id + '/edit') }}"
-       class="border border-gray-300 px-3 py-1.5 rounded text-sm hover:bg-gray-50 text-center">{{ t.product.detail.edit_btn }}</a>
+       class="mr-control border border-gray-300 px-3 py-1.5 rounded text-sm hover:bg-gray-50 text-center">{{ t.product.detail.edit_btn }}</a>
     <a href="{{ url('/products/' + product.id + '/merge') }}"
-       class="border border-gray-300 px-3 py-1.5 rounded text-sm hover:bg-gray-50 text-center">{{ t.product.detail.merge_btn }}</a>
+       class="mr-control border border-gray-300 px-3 py-1.5 rounded text-sm hover:bg-gray-50 text-center">{{ t.product.detail.merge_btn }}</a>
     <button
       {% if device_count == 0 %}
       hx-delete="{{ url('/products/' + product.id) }}"

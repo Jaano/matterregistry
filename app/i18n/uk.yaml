@@ -5,6 +5,15 @@ nav:
   settings: "Налаштування"
   network: "Мережа"
 
+quick_search:
+  title: "Швидкий пошук"
+  close: "Закрити пошук"
+  hint: "Виберіть елемент клавішами зі стрілками. Натисніть Enter, щоб відкрити, і Esc, щоб закрити."
+  devices: "Пристрої"
+  products: "Продукти"
+  pages: "Сторінки"
+  no_results: "Відповідних пристроїв або продуктів не знайдено."
+
 index:
   tagline: "Позасмуговий реєстр інформації про сполучення пристроїв Matter."
 
@@ -13,7 +22,7 @@ device:
     title: "Пристрої"
     new_btn: "+ Новий пристрій"
     sync_all_aria: "Синхронізувати всі інтеграції"
-    search_label: "Пошук"
+    filter_label: "Фільтр"
     search_placeholder: "Назва, виробник, кімната, нотатки…"
     status_label: "Статус"
     vendor_label: "Виробник"
@@ -25,7 +34,6 @@ device:
     status_retired: "Виведений з експлуатації"
     status_spare: "Запасний"
     status_hidden: "Прихований"
-    clear_filters: "Очистити все"
     col_name: "Назва"
     col_vendor: "Виробник"
     col_product: "Продукт"
@@ -35,10 +43,17 @@ device:
     empty: "Пристроїв ще немає."
     empty_add: "Додайте свій перший пристрій →"
     filtered_empty: "Жоден пристрій не відповідає поточним фільтрам."
-    clear_all_filters: "Очистити всі фільтри"
     matching: "відповідають фільтрам"
     print_qr_sheet_btn: "Друкувати аркуш QR"
     print_qr_sheet_title: "Друкувати QR-наклейки для кожного пристрою зі збереженим кодом, включно з прихованими"
+
+    protocol_label: "Протокол"
+    all_protocols: "Усі протоколи"
+    view_label: "Вигляд"
+    table_view: "Таблиця"
+    card_view: "Картки"
+    count_label: "пристроїв"
+    count_one: "пристрій"
 
   form:
     new_title: "Новий пристрій"
@@ -62,6 +77,12 @@ device:
     transport_label: "Транспорт"
     warranty_label: "Гарантія спливає"
     notes_label: "Нотатки (markdown)"
+
+    new_intro: "Почніть із назви. Решту додайте на сторінці пристрою."
+    basics_heading: "Основні дані пристрою"
+    basics_desc: "Потрібна лише назва."
+    product_none: "Вибрати продукт пізніше"
+    product_search: "Пошук у каталозі продуктів"
 
   detail:
     scan_btn: "Сканувати / додати код"
@@ -239,6 +260,7 @@ scan_block:
 
 settings:
   title: "Налаштування"
+  subtitle: "Перегляньте налаштування застосунку та необов'язкові джерела додаткових даних."
   tab_general: "Загальні"
   tab_integrations: "Інтеграції"
   import_success: "Імпорт завершено -"
@@ -307,6 +329,11 @@ settings:
 
   integrations:
     title: "Інтеграції"
+    heading: "Зовнішні інтеграції"
+    description: "Налаштовані джерела доповнюють записи реєстру. Синхронізація читає лише кеші зовнішніх систем."
+    no_url: "URL-адресу не налаштовано"
+    supervisor_short: "Використовується токен Supervisor"
+    mdns_unconfigured: "Виявлення вимкнено"
     cap_heading: "Можливості"
     cap_creates: "створює пристрої"
     cap_updates: "оновлює пристрої"
@@ -345,6 +372,8 @@ settings:
     sync_error: "Помилка"
     sync_done: "Готово - створено <strong>{created}</strong>, оновлено <strong>{updated}</strong>, без змін <strong>{unchanged}</strong>."
     sync_done_otbr: "Готово - мережу <strong>{network}</strong> збережено."
+    auto_locate: "Автоматично визначати невідомі пристрої Thread"
+    auto_locate_hint: "Коли мережа показує пристрій Thread, якому реєстр не може дати назву, маршрутизатори опитуються по одному, щоб знайти, який це пристрій. Надсилає в мережу Thread кілька діагностичних запитів лише для читання."
     status:
       connected: "підключено"
       connecting: "підключення"
@@ -357,13 +386,12 @@ product:
   list:
     title: "Продукти"
     new_btn: "+ Новий продукт"
-    search_label: "Пошук"
+    filter_label: "Фільтр"
     search_placeholder: "Назва, виробник, модель, VID/PID, опис…"
     protocol_label: "Протокол"
     vendor_label: "Виробник"
     all_protocols: "Усі протоколи"
     all_vendors: "Усі виробники"
-    clear_filters: "Очистити все"
     col_thumb: "Значок"
     col_product: "Продукт"
     col_vendor: "Виробник"
@@ -374,8 +402,11 @@ product:
     empty: "Ще немає продуктів."
     empty_add: "Створити продукт →"
     filtered_empty: "Жоден продукт не відповідає поточним фільтрам."
-    clear_all_filters: "Очистити всі фільтри"
     matching: "відповідностей фільтрам"
+
+    view_label: "Вигляд продуктів"
+    table_view: "Таблиця"
+    card_view: "Картки"
 
   form:
     new_title: "Новий продукт"
@@ -476,6 +507,12 @@ modal:
   delete: "Видалити"
 
 network:
+  thread_link_legend: "Зв'язок Thread"
+  weak_thread_link_legend: "Слабший зв'язок Thread"
+  wifi_link_legend: "Зв'язок Wi-Fi"
+  diagram_desc: "Збережені з'єднання згруповано за кімнатами."
+  unassigned_room: "Не призначено"
+  empty_nodes: "У збереженій топології немає вузлів."
   title: "Мережа"
   topology_heading: "Топологія"
   empty_topology: "Топології ще немає. Вона з'явиться після синхронізації, якщо сервер Matter її підтримує."
@@ -486,19 +523,25 @@ network:
   col_network: "Мережа"
   col_address: "Адреса"
   connections_heading: "З'єднання"
+  mesh_view: "Схема"
+  empty_links: "У збереженій топології немає з'єднань."
   col_from: "Звідки"
   col_to: "Куди"
   col_strength: "Сила"
-  col_signal: "Сигнал"
+  col_link_quality: "Якість з’єднання"
+  col_rssi: "RSSI"
   border_routers_heading: "Прикордонні маршрутизатори Thread (mDNS)"
   empty_border_routers: "Не знайдено. Потрібне виявлення mDNS."
   col_device: "Пристрій"
   col_thread_version: "Thread"
   commissionable_heading: "Відкриті для введення в експлуатацію (mDNS)"
+  discoverable_heading: "Виявлені, не готові до сполучення (mDNS)"
   empty_commissionable: "Жоден пристрій Matter не повідомляє про готовність до введення в експлуатацію."
   col_vid_pid: "VID / PID"
   col_discriminator: "Дискримінатор"
   col_mode: "Режим"
+  mode_basic: "Базовий"
+  mode_enhanced: "Розширений"
 
 dcl:
   lookup_btn: "Знайти в CSA DCL"

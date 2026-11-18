@@ -462,6 +462,13 @@ class DeviceLink(SQLModel, table=True):
     __tablename__ = "device_link"  # type: ignore[assignment]
     __table_args__ = (
         UniqueConstraint("device_id", "integration", name="uq_device_link_device_integration"),
+        Index(
+            "uq_device_link_topology_identity",
+            "integration",
+            "external_id",
+            unique=True,
+            sqlite_where=text("integration IN ('topology_border_router', 'topology_wifi_ap')"),
+        ),
     )
 
     id: str = Field(default_factory=lambda: str(uuid.uuid4()), primary_key=True)
@@ -601,6 +608,26 @@ class MatterTopologySnapshot(SQLModel, table=True):
     id: str = Field(default="matter_server", primary_key=True)
     collected_at: str | None = Field(default=None)  # server-reported collection time
     payload_json: str = Field(default="{}")  # {"nodes": [...], "connections": [...]}
+    updated_at: datetime = Field(default_factory=_now)
+
+
+# ── Integration behavior settings ─────────────────────────────────────────────
+
+
+class IntegrationSetting(SQLModel, table=True):
+    """A user-chosen behavior switch of one integration (not connection config).
+
+    URLs and tokens stay environment-only. This table holds only behavior the
+    user toggles in Settings → Integrations (for example OTBR auto-locate), as
+    one JSON value per (integration, key). A missing row means the key's
+    default. Excluded from backups (§4a): a restore returns to the defaults.
+    """
+
+    __tablename__ = "integration_setting"  # type: ignore[assignment]
+
+    integration: str = Field(primary_key=True)  # slug, e.g. "otbr"
+    key: str = Field(primary_key=True)
+    value_json: str = Field(default="null")
     updated_at: datetime = Field(default_factory=_now)
 
 

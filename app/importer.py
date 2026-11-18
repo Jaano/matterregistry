@@ -273,6 +273,38 @@ def plan_import(session: Session, payload: dict, *, policy: str = "skip") -> Imp
     for m in payload.get("device_fabric_memberships", []):
         plan.creates.append(f"membership:{m.get('id', '?')}")
 
+    # Infrastructure links are unique by kind and hardware identity. Reject
+    # conflicting backups before an INSERT can fail the partial unique index.
+    topology_integrations = {"topology_border_router", "topology_wifi_ap"}
+    linked_identities = {
+        (link.integration, link.external_id): link.device_id
+        for link in session.exec(select(DeviceLink)).all()
+        if link.integration in topology_integrations
+    }
+    linked_device_kinds = {
+        (link.device_id, link.integration): link.external_id
+        for link in session.exec(select(DeviceLink)).all()
+        if link.integration in topology_integrations
+    }
+    for link in payload.get("device_links", []):
+        integration = link.get("integration")
+        if integration not in topology_integrations:
+            continue
+        key = (integration, link.get("external_id"))
+        device_id = link.get("device_id")
+        owner = linked_identities.get(key)
+        if owner is not None and owner != device_id:
+            plan.errors.append(f"Topology identity {key[0]}:{key[1]} is linked to multiple Devices")
+        elif isinstance(device_id, str):
+            linked_identities[key] = device_id
+            device_key = (device_id, integration)
+            existing_identity = linked_device_kinds.get(device_key)
+            if existing_identity is not None and existing_identity != key[1]:
+                plan.errors.append(
+                    f"Device {device_id} has multiple {integration} topology identities"
+                )
+            linked_device_kinds[device_key] = key[1]
+
     return plan
 
 

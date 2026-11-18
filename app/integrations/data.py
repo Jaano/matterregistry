@@ -52,6 +52,28 @@ def upsert(
     return row
 
 
+def merge(
+    session: Session,
+    *,
+    device_id: str,
+    integration: str,
+    payload: dict[str, Any],
+) -> DeviceIntegrationData:
+    """Overlay *payload* onto the stored payload instead of replacing it.
+
+    Keys absent from *payload* survive, so independent writers (a sync
+    projection and a device action) can share one integration's row without
+    erasing each other's fields.  The caller must commit the session.
+    """
+    existing = read(session, device_id=device_id, integration=integration) or {}
+    return upsert(
+        session,
+        device_id=device_id,
+        integration=integration,
+        payload={**existing, **payload},
+    )
+
+
 def read(
     session: Session,
     *,

@@ -5,6 +5,15 @@ nav:
   settings: "Asetukset"
   network: "Verkko"
 
+quick_search:
+  title: "Pikahaku"
+  close: "Sulje haku"
+  hint: "Valitse nuolinäppäimillä. Avaa Enterillä. Sulje Escillä."
+  devices: "Laitteet"
+  products: "Tuotteet"
+  pages: "Sivut"
+  no_results: "Vastaavia laitteita tai tuotteita ei löytynyt."
+
 index:
   tagline: "Erillinen rekisteri Matter-laitteiden pariliitostietoja varten."
 
@@ -13,7 +22,7 @@ device:
     title: "Laitteet"
     new_btn: "+ Uusi laite"
     sync_all_aria: "Synkronoi kaikki integraatiot"
-    search_label: "Haku"
+    filter_label: "Suodata"
     search_placeholder: "Nimi, valmistaja, huone, muistiinpanot…"
     status_label: "Tila"
     vendor_label: "Valmistaja"
@@ -25,7 +34,6 @@ device:
     status_retired: "Poistettu käytöstä"
     status_spare: "Varalla"
     status_hidden: "Piilotettu"
-    clear_filters: "Tyhjennä kaikki"
     col_name: "Nimi"
     col_vendor: "Valmistaja"
     col_product: "Tuote"
@@ -35,10 +43,17 @@ device:
     empty: "Ei vielä laitteita."
     empty_add: "Lisää ensimmäinen laite →"
     filtered_empty: "Mikään laite ei vastaa nykyisiä suodattimia."
-    clear_all_filters: "Tyhjennä kaikki suodattimet"
     matching: "vastaa suodattimia"
     print_qr_sheet_btn: "Tulosta QR-arkki"
     print_qr_sheet_title: "Tulosta QR-tarrat jokaisesta laitteesta, jolla on tallennettu koodi, mukaan lukien piilotetut"
+
+    protocol_label: "Protokolla"
+    all_protocols: "Kaikki protokollat"
+    view_label: "Näkymä"
+    table_view: "Taulukko"
+    card_view: "Kortit"
+    count_label: "laitetta"
+    count_one: "laite"
 
   form:
     new_title: "Uusi laite"
@@ -62,6 +77,12 @@ device:
     transport_label: "Siirtotapa"
     warranty_label: "Takuu päättyy"
     notes_label: "Muistiinpanot (markdown)"
+
+    new_intro: "Aloita nimellä. Lisää muut tiedot laitteen sivulla."
+    basics_heading: "Laitteen perustiedot"
+    basics_desc: "Vain nimi on pakollinen."
+    product_none: "Valitse tuote myöhemmin"
+    product_search: "Hae tuoteluettelosta"
 
   detail:
     scan_btn: "Skannaa / lisää koodi"
@@ -239,6 +260,7 @@ scan_block:
 
 settings:
   title: "Asetukset"
+  subtitle: "Tarkastele sovelluksen asetuksia ja valinnaisia lisätietolähteitä."
   tab_general: "Yleiset"
   tab_integrations: "Integraatiot"
   import_success: "Tuonti valmis -"
@@ -307,6 +329,11 @@ settings:
 
   integrations:
     title: "Integraatiot"
+    heading: "Ulkoiset integraatiot"
+    description: "Määritetyt lähteet täydentävät rekisterin tietoja. Synkronointi lukee vain ulkoisten järjestelmien välimuisteja."
+    no_url: "URL-osoitetta ei ole määritetty"
+    supervisor_short: "Käytetään Supervisor-tunnusta"
+    mdns_unconfigured: "Löytäminen on poistettu käytöstä"
     cap_heading: "Ominaisuudet"
     cap_creates: "luo laitteita"
     cap_updates: "päivittää laitteita"
@@ -345,6 +372,8 @@ settings:
     sync_error: "Virhe"
     sync_done: "Valmis - luotu <strong>{created}</strong>, päivitetty <strong>{updated}</strong>, muuttumaton <strong>{unchanged}</strong>."
     sync_done_otbr: "Valmis - verkko <strong>{network}</strong> tallennettu."
+    auto_locate: "Tunnista tuntemattomat Thread-laitteet automaattisesti"
+    auto_locate_hint: "Kun verkossa näkyy Thread-laite, jota rekisteri ei osaa nimetä, reitittimiltä kysytään yksi kerrallaan, mikä rekisterin laite se on. Lähettää Thread-verkkoon muutaman vain luku -diagnostiikkapyynnön."
     status:
       connected: "yhdistetty"
       connecting: "yhdistetään"
@@ -357,13 +386,12 @@ product:
   list:
     title: "Tuotteet"
     new_btn: "+ Uusi tuote"
-    search_label: "Haku"
+    filter_label: "Suodata"
     search_placeholder: "Nimi, valmistaja, malli, VID/PID, kuvaus…"
     protocol_label: "Protokolla"
     vendor_label: "Valmistaja"
     all_protocols: "Kaikki protokollat"
     all_vendors: "Kaikki valmistajat"
-    clear_filters: "Tyhjennä kaikki"
     col_thumb: "Kuvake"
     col_product: "Tuote"
     col_vendor: "Valmistaja"
@@ -374,8 +402,11 @@ product:
     empty: "Ei vielä tuotteita."
     empty_add: "Luo tuote →"
     filtered_empty: "Mikään tuote ei vastaa nykyisiä suodattimia."
-    clear_all_filters: "Tyhjennä kaikki suodattimet"
     matching: "vastaavat suodattimia"
+
+    view_label: "Tuotenäkymä"
+    table_view: "Taulukko"
+    card_view: "Kortit"
 
   form:
     new_title: "Uusi tuote"
@@ -476,6 +507,12 @@ modal:
   delete: "Poista"
 
 network:
+  thread_link_legend: "Thread-yhteys"
+  weak_thread_link_legend: "Heikompi Thread-yhteys"
+  wifi_link_legend: "Wi-Fi-yhteys"
+  diagram_desc: "Tallennetut yhteydet huoneittain."
+  unassigned_room: "Määrittämätön"
+  empty_nodes: "Tallennetussa topologiassa ei ole solmuja."
   title: "Verkko"
   topology_heading: "Topologia"
   empty_topology: "Topologiaa ei ole vielä. Se ilmestyy synkronoinnin jälkeen, jos Matter-palvelin tukee sitä."
@@ -486,19 +523,25 @@ network:
   col_network: "Verkko"
   col_address: "Osoite"
   connections_heading: "Yhteydet"
+  mesh_view: "Verkkokaavio"
+  empty_links: "Tallennetussa topologiassa ei ole yhteyksiä."
   col_from: "Lähde"
   col_to: "Kohde"
   col_strength: "Vahvuus"
-  col_signal: "Signaali"
+  col_link_quality: "Yhteyden laatu"
+  col_rssi: "RSSI"
   border_routers_heading: "Thread Border Routerit (mDNS)"
   empty_border_routers: "Ei löytynyt. Vaatii mDNS-etsinnän."
   col_device: "Laite"
   col_thread_version: "Thread"
   commissionable_heading: "Valmiina käyttöönottoon (mDNS)"
+  discoverable_heading: "Löydettävissä, ei valmiina käyttöönottoon (mDNS)"
   empty_commissionable: "Mikään Matter-laite ei ilmoita olevansa valmis käyttöönottoon."
   col_vid_pid: "VID / PID"
   col_discriminator: "Discriminator"
   col_mode: "Tila"
+  mode_basic: "Perus"
+  mode_enhanced: "Laajennettu"
 
 dcl:
   lookup_btn: "Hae CSA DCL:stä"

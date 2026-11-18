@@ -108,6 +108,59 @@ def test_homekit_stale_link_repoint_on_repair(engine, client):
     assert links[0].external_id == "ha-new"  # re-pointed
 
 
+def _identifiers(accessory_id: str) -> list:
+    return [["homekit_controller:accessory-id", f"{accessory_id}:aid:1"]]
+
+
+def test_homekit_accessory_id_is_refreshed_when_the_accessory_is_repaired(engine, client):
+    """HA's identifier follows a re-pair; the stored shared key must follow it."""
+    client._sync_devices([_hk("ha-1", "AAA111", identifiers=_identifiers("OLD:ID"))], reason="t1")
+    client._sync_devices([_hk("ha-1", "AAA111", identifiers=_identifiers("NEW:ID"))], reason="t2")
+    devs = _devices(engine)
+    assert len(devs) == 1
+    assert devs[0].homekit_accessory_id == "NEW:ID"
+
+
+def test_homekit_accessory_id_is_not_taken_from_another_device(engine, client):
+    client._sync_devices([_hk("ha-1", "AAA111", identifiers=_identifiers("ID:ONE"))], reason="t1")
+    client._sync_devices([_hk("ha-2", "BBB222", identifiers=_identifiers("ID:TWO"))], reason="t2")
+    # ha-2's accessory now reports the id ha-1's device holds: it must not be taken over.
+    client._sync_devices([_hk("ha-2", "BBB222", identifiers=_identifiers("ID:ONE"))], reason="t3")
+    by_serial = {d.serial: d.homekit_accessory_id for d in _devices(engine)}
+    assert by_serial == {"AAA111": "ID:ONE", "BBB222": "ID:TWO"}
+
+
+def test_repair_without_serial_heals_through_the_refreshed_accessory_id(engine, client):
+    """Regression for a bulb with a stale id, a stale HA link and no serial: HA alone
+    could neither match nor create it. Once the id is current (refreshed by mDNS),
+    the HA sync matches on it and re-points the link instead of skipping."""
+    with Session(engine) as s:
+        dev = Device(
+            name="Nanoleaf A19 2XGA",
+            protocol=DeviceProtocol.homekit,
+            homekit_accessory_id="AF:96:99:21:95:9E",
+        )
+        s.add(dev)
+        s.commit()
+        s.refresh(dev)
+        s.add(DeviceLink(device_id=dev.id, integration="ha_core", external_id="ha-stale"))
+        s.commit()
+        dev_id = dev.id
+
+    new = _hk("ha-new", None, identifiers=_identifiers("5F:9B:F8:6B:DF:5B"))
+    # Before the id is refreshed nothing matches, and with no serial it is skipped.
+    assert client._sync_devices([new], reason="t1")["skipped"] >= 1
+
+    with Session(engine) as s:
+        s.get(Device, dev_id).homekit_accessory_id = "5F:9B:F8:6B:DF:5B"
+        s.commit()
+    client._sync_devices([new], reason="t2")
+
+    assert len(_devices(engine)) == 1
+    links = _links(engine)
+    assert [(link.device_id, link.external_id) for link in links] == [(dev_id, "ha-new")]
+
+
 def test_homekit_without_serial_is_skipped(engine, client):
     res = client._sync_devices([_hk("ha-x", None)], reason="t")
     assert _devices(engine) == []

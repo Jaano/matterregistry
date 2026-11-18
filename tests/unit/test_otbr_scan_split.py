@@ -35,8 +35,15 @@ class _FakeResp:
 class _RecordingClient:
     """Fake httpx.AsyncClient that records (method, url) and returns canned data."""
 
-    def __init__(self, calls: list[tuple[str, str]], *args: object, **kwargs: object) -> None:
+    def __init__(
+        self,
+        calls: list[tuple[str, str]],
+        diagnostics: list[dict] | None = None,
+        *args: object,
+        **kwargs: object,
+    ) -> None:
         self._calls = calls
+        self._diagnostics = diagnostics or []
 
     async def __aenter__(self) -> _RecordingClient:
         return self
@@ -64,7 +71,7 @@ class _RecordingClient:
         if url.endswith("/node/coprocessor-version"):
             return _FakeResp("ncp-1.0")
         if url.endswith("/api/diagnostics"):
-            return _FakeResp([])
+            return _FakeResp(self._diagnostics)
         if "/api/actions/" in url:
             return _FakeResp({"status": "completed"})
         return _FakeResp(None, 404)
@@ -76,9 +83,12 @@ class _RecordingClient:
         return _FakeResp({"data": [{"id": "task1"}]})
 
 
-def _patch(monkeypatch) -> list[tuple[str, str]]:
+def _patch(monkeypatch, diagnostics: list[dict] | None = None) -> list[tuple[str, str]]:
     calls: list[tuple[str, str]] = []
-    monkeypatch.setattr(otbr_client.httpx, "AsyncClient", lambda *a, **k: _RecordingClient(calls))
+    monkeypatch.setattr(
+        otbr_client.httpx, "AsyncClient", lambda *a, **k: _RecordingClient(calls, diagnostics)
+    )
+    monkeypatch.setattr(otbr_client, "_POLL_INTERVAL", 0)
     return calls
 
 
@@ -97,10 +107,13 @@ async def test_poll_once_is_server_only_no_scan(monkeypatch):
 
 async def test_scan_diagnostics_triggers_broadcast_scan(monkeypatch):
     """The device-action path actively POSTs the broadcast diagnostic scan."""
-    calls = _patch(monkeypatch)
+    calls = _patch(monkeypatch, [{"extAddress": "aabb", "rloc16": "0x7000", "routerId": 28}])
     client = OTBRClient(BASE)
 
-    await client.scan_diagnostics()
+    outcome = await client.scan_diagnostics()
+
+    assert outcome.method == "broadcast"
+    assert outcome.answered == 1
 
     assert ("POST", f"{BASE}/api/actions") in calls
     assert ("GET", f"{BASE}/api/diagnostics") in calls

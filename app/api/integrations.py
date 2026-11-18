@@ -8,6 +8,7 @@ import logging
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import Response
+from pydantic import BaseModel
 from sqlmodel import Session, select
 
 from ..audit import log as audit_log
@@ -134,12 +135,55 @@ async def otbr_poll_apply(request: Request):
         snapshot = await client.poll_once(reason="ui.manual_sync")
     except Exception as exc:
         raise HTTPException(status_code=502, detail=f"OTBR poll failed: {exc}") from exc
+    await client.run_auto_locate()
 
     return {
         "ok": True,
         "network_name": snapshot.dataset.get("networkName", ""),
         "ext_pan_id": snapshot.dataset.get("extPanId", ""),
     }
+
+
+# ── OTBR: behavior settings ───────────────────────────────────────────────────
+
+
+class OtbrSettings(BaseModel):
+    auto_locate: bool
+
+
+class OtbrSettingsUpdate(BaseModel):
+    auto_locate: bool | None = None
+
+
+@router.get("/otbr/settings", response_model=OtbrSettings)
+def otbr_settings_get(session: Session = Depends(get_session)) -> OtbrSettings:
+    """Behavior switches of the OTBR integration (connection config stays env-only)."""
+    from ..integrations.settings_store import otbr_auto_locate_enabled
+
+    return OtbrSettings(auto_locate=otbr_auto_locate_enabled(session))
+
+
+@router.patch("/otbr/settings", response_model=OtbrSettings)
+def otbr_settings_patch(
+    body: OtbrSettingsUpdate, session: Session = Depends(get_session)
+) -> OtbrSettings:
+    from ..integrations.settings_store import (
+        OTBR,
+        OTBR_AUTO_LOCATE,
+        otbr_auto_locate_enabled,
+        set_bool,
+    )
+
+    if body.auto_locate is not None:
+        set_bool(session, OTBR, OTBR_AUTO_LOCATE, body.auto_locate)
+        audit_log(
+            session,
+            action="settings.otbr_auto_locate",
+            entity="integration:otbr",
+            reason=f"api.settings:{'on' if body.auto_locate else 'off'}",
+        )
+        session.commit()
+    return OtbrSettings(auto_locate=otbr_auto_locate_enabled(session))
 
 
 # ── HA Core: config ────────────────────────────────────────────────────────────

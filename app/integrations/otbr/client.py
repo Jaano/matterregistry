@@ -4,7 +4,7 @@ OTBR REST client.
 All OTBR-specific JSON shapes are confined to this module; the rest of the
 app uses project-local dataclasses (ThreadNetworkSnapshot, RouterDiag, etc.).
 
-Sync poll flow (server-only - never touches the mesh, per TECHNICAL_DESIGN §3a):
+Regular sync poll flow (server-only - does not touch the mesh):
   GET /node                  - node summary (ba_id, state, rloc16, ext_address …)
   GET /node/dataset/active   - full operational dataset (Accept: application/json)
   GET /node/coprocessor-version - NCP firmware version (optional; may 404)
@@ -12,12 +12,27 @@ Sync poll flow (server-only - never touches the mesh, per TECHNICAL_DESIGN §3a)
 
 Diagnostic scan (active - wakes every router; explicit device action only, never sync):
   POST /api/actions          - trigger a broadcast diagnostic scan (0xfffe → all routers)
-  GET /api/actions/{id}      - poll task status until "completed"
+  GET /api/actions/{id}      - poll task status until "completed" or "failed"
   GET /api/diagnostics       - read the freshly populated per-router telemetry cache
+  One router that does not answer fails the whole broadcast task and leaves no partial
+  results, so a failed (or empty) broadcast falls back to the per-router unicast queries
+  below, merged into the same cache. A scan that yields nothing raises instead of
+  reporting success.
 
-The background loop and every "Sync now" path do the **server-only** read above;
-the active scan runs solely via ``scan_diagnostics()`` behind a per-device button
-(ISSUES.md I.18 / B.23). Background loop polls every 5 min when enabled.
+Locate action (active - unicasts one router at a time; manual or auto-locate):
+  GET /node                  - the border router's own RLOC16
+  POST /api/actions          - unicast diagnostic to the border router for its ``route``
+                               TLV (lists every router id), then to each router in turn
+                               until the device's stored IPv6 address appears in a reply
+  GET /api/actions/{id}      - poll task status
+  GET /api/diagnostics       - read the reply (extAddress + ipv6Addresses)
+The Thread extended address of the matching router is persisted on the Device so the
+Network page can name the node with no further traffic.
+
+The background loop and every "Sync now" path do the server-only read above,
+then may run the bounded auto-locate walk when enabled and needed. The active
+broadcast scan runs solely via ``scan_diagnostics()`` behind a per-device button.
+Background loop polls every 5 min when enabled.
 Backoff on failure: 30s → 60s → 300s → 900s → 1800s (cap).
 """
 
@@ -27,7 +42,8 @@ import asyncio
 import ipaddress
 import json
 import logging
-from collections.abc import Sequence
+from collections.abc import AsyncGenerator, Sequence
+from contextlib import aclosing
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from enum import StrEnum
@@ -47,6 +63,15 @@ _DIAG_DEST = "0xfffe"
 # Server-side scan timeout passed to OTBR; routers that don't answer within
 # this window are simply absent from the results.
 _DIAG_SCAN_TIMEOUT = 10  # seconds
+# Unicast "locate" queries: only what is needed to identify one router.
+_LOCATE_TYPES = ["extAddress", "rloc16", "ipv6Addresses"]
+_ROUTE_TYPES = ["extAddress", "rloc16", "route"]
+_UNICAST_TIMEOUT = 8  # server-side timeout per router (s)
+_POLL_INTERVAL = 0.5  # task-status poll interval (s)
+_UNICAST_GAP = 0.5  # pause between two routers (s) - never burst onto the mesh
+_LOCATE_BUDGET = 75.0  # wall-clock cap for one locate run (s)
+_SCAN_BUDGET = 150.0  # wall-clock cap for the per-router scan fallback (s)
+_AUTO_LOCATE_COOLDOWN = 6 * 3600.0  # do not re-query an unresolved router sooner (s)
 # TLV types requested from each router.
 _DIAG_TYPES = [
     "rloc16",
@@ -100,6 +125,34 @@ class RouterDiag:
     router_id: int
     router_neighbors: list[RouterNeighbor] = field(default_factory=list)
     child_table: list[RouterChild] = field(default_factory=list)
+
+
+@dataclass
+class ScanOutcome:
+    """Result of one diagnostic scan: what answered and how it was gathered."""
+
+    diagnostics: list[RouterDiag]
+    method: str  # "broadcast" | "per-router"
+    answered: int
+    unreachable: int = 0
+
+    @property
+    def message(self) -> str:
+        if self.method == "broadcast":
+            return f"Thread diagnostics scan complete ({self.answered} routers answered)"
+        return (
+            "Thread diagnostics scan complete via per-router queries "
+            f"({self.answered} answered, {self.unreachable} unreachable); "
+            "the broadcast scan failed"
+        )
+
+
+@dataclass
+class _WalkStats:
+    """Counters for one walk over the routers (see ``_router_replies``)."""
+
+    queried: int = 0
+    failed: int = 0
 
 
 @dataclass
@@ -231,6 +284,25 @@ def extract_ext_mac_from_ll(ip: str) -> str | None:
 def _rloc16_int(rloc16_str: str) -> int:
     """Parse "0xe400" or "e400" → 0xe400."""
     return int(rloc16_str, 16)
+
+
+def router_rlocs_from_route(entry: dict[str, Any], *, exclude: int | None = None) -> list[int]:
+    """RLOC16 of every router listed in a diagnostic reply's ``route`` TLV.
+
+    A router id occupies the top six bits of its RLOC16 (``rloc16 = id << 10``).
+    *exclude* drops one RLOC16 (the border router itself). Malformed entries
+    are skipped; the result is sorted and de-duplicated.
+    """
+    route = entry.get("route")
+    rows = route.get("routeData") if isinstance(route, dict) else None
+    rlocs: set[int] = set()
+    for row in rows or []:
+        rid = row.get("routeId") if isinstance(row, dict) else None
+        if isinstance(rid, int) and not isinstance(rid, bool) and 0 <= rid < 64:
+            rlocs.add(rid << 10)
+    if exclude is not None:
+        rlocs.discard(exclude)
+    return sorted(rlocs)
 
 
 # ── JSON → dataclass parsers ─────────────────────────────────────────────────
@@ -486,6 +558,10 @@ class OTBRClient(PolledIntegration):
         self._status = ClientStatus.disconnected
         self._diagnostics: list[RouterDiag] = []
         self._self_node: OTBRNodeInfo | None = None
+        # Serialises unicast walks (manual locate, auto-locate) so two never overlap.
+        self._mesh_lock = asyncio.Lock()
+        # Unresolved router ext address -> loop time of the last auto-locate attempt.
+        self._auto_locate_attempts: dict[str, float] = {}
 
     def get_diagnostics(self) -> list[RouterDiag]:
         return list(self._diagnostics)
@@ -505,6 +581,7 @@ class OTBRClient(PolledIntegration):
         staging table; no separate staging table is needed.
         """
         await self.poll_once()
+        await self.run_auto_locate()
 
     def project(self, session: object) -> SyncResult:  # type: ignore[override]
         """Phase 2: add 'thread' to network_type for correlated devices.
@@ -524,7 +601,7 @@ class OTBRClient(PolledIntegration):
             ThreadNetwork,
         )
         from ...services import set_field
-        from ..data import upsert as upsert_integration_data
+        from ..data import merge as merge_integration_data
 
         result = SyncResult()
 
@@ -560,7 +637,7 @@ class OTBRClient(PolledIntegration):
                         continue
 
                     # ── B.12: persist what OTBR correlated for this device ──
-                    upsert_integration_data(
+                    merge_integration_data(
                         db,
                         device_id=device.id,
                         integration=self.slug,
@@ -609,81 +686,391 @@ class OTBRClient(PolledIntegration):
         except Exception:
             return []
 
-    async def _trigger_diagnostics(self, http: httpx.AsyncClient) -> list[Any]:
-        """POST a broadcast diagnostic scan task, wait for completion, return raw list.
+    async def _run_task(
+        self, http: httpx.AsyncClient, destination: str, types: list[str], timeout: int
+    ) -> bool:
+        """POST one diagnostic task and wait for it; True only if it completed.
 
-        Uses RLOC16 0xfffe (Thread broadcast - all routers) so one request
-        covers the whole partition.  **Actively wakes every router**, so this is
-        an explicit device action only (``scan_diagnostics``), never part of
-        sync (§3a). Falls back to whatever is already cached if the task POST or
-        polling fails.
+        ``failed`` is terminal (OTBR marks the task failed when a destination
+        does not answer), so it is not polled until the deadline. Any transport
+        or parse error counts as not completed.
         """
-        base_hdrs = {"Accept": "application/json"}
+        hdrs = {"Accept": "application/json"}
+        body = json.dumps(
+            {
+                "data": [
+                    {
+                        "type": "getNetworkDiagnosticTask",
+                        "attributes": {
+                            "destination": destination,
+                            "destinationType": "rloc",
+                            "types": types,
+                            "timeout": timeout,
+                        },
+                    }
+                ]
+            }
+        ).encode()
         try:
-            body = json.dumps(
-                {
-                    "data": [
-                        {
-                            "type": "getNetworkDiagnosticTask",
-                            "attributes": {
-                                "destination": _DIAG_DEST,
-                                "destinationType": "rloc",
-                                "types": _DIAG_TYPES,
-                                "timeout": _DIAG_SCAN_TIMEOUT,
-                            },
-                        }
-                    ]
-                }
-            ).encode()
-            post_resp = await http.post(
+            post = await http.post(
                 f"{self._base_url}/api/actions",
                 content=body,
-                headers={**base_hdrs, "Content-Type": "application/vnd.api+json"},
+                headers={**hdrs, "Content-Type": "application/vnd.api+json"},
             )
-            post_resp.raise_for_status()
-            task_id = post_resp.json()["data"][0]["id"]
-
-            # Poll until completed or the server-side timeout elapses.
-            deadline = asyncio.get_running_loop().time() + _DIAG_SCAN_TIMEOUT + 4
-            while asyncio.get_running_loop().time() < deadline:
-                await asyncio.sleep(2)
-                st_resp = await http.get(
-                    f"{self._base_url}/api/actions/{task_id}", headers=base_hdrs
-                )
-                if st_resp.json().get("status") == "completed":
+            post.raise_for_status()
+            task_id = post.json()["data"][0]["id"]
+            loop = asyncio.get_running_loop()
+            deadline = loop.time() + timeout + 4
+            status = None
+            while loop.time() < deadline:
+                await asyncio.sleep(_POLL_INTERVAL)
+                st = await http.get(f"{self._base_url}/api/actions/{task_id}", headers=hdrs)
+                status = st.json().get("status")
+                if status in ("completed", "failed"):
                     break
+            return status == "completed"
         except Exception:
-            pass  # fall through and read whatever is already cached
+            logger.debug("OTBR diagnostic task to %s failed", destination, exc_info=True)
+            return False
 
-        return await self._read_diagnostics(http)
+    async def _broadcast_scan(self, http: httpx.AsyncClient) -> list[Any] | None:
+        """Broadcast diagnostic scan (RLOC16 0xfffe); the raw replies, or None.
 
-    async def scan_diagnostics(self) -> list[RouterDiag]:
+        **Actively wakes every router**, so this is an explicit device action
+        only (``scan_diagnostics``), never part of sync (§3a). None when the task
+        failed, timed out, or returned no replies.
+        """
+        if not await self._run_task(http, _DIAG_DEST, _DIAG_TYPES, _DIAG_SCAN_TIMEOUT):
+            return None
+        return await self._read_diagnostics(http) or None
+
+    async def _query_router(
+        self, http: httpx.AsyncClient, rloc16: int, types: list[str]
+    ) -> dict[str, Any] | None:
+        """Unicast one diagnostic request to *rloc16* and return that router's reply.
+
+        Reaches onto the mesh (one router), so it is only ever called from an
+        explicit device action. Returns None when the task fails, times out, or
+        the reply is missing - callers treat that router as unreachable.
+        """
+        if not await self._run_task(http, f"0x{rloc16:04x}", types, _UNICAST_TIMEOUT):
+            return None
+        try:
+            for entry in await self._read_diagnostics(http):
+                if isinstance(entry, dict) and _rloc16_int(entry.get("rloc16", "")) == rloc16:
+                    return entry
+        except ValueError:
+            pass
+        return None
+
+    async def _own_entry(
+        self, http: httpx.AsyncClient, types: list[str]
+    ) -> tuple[int, dict[str, Any] | None]:
+        """The border router's own RLOC16 and its diagnostic reply for *types*.
+
+        The ``route`` TLV of that reply lists every router id, so the router
+        list needs no other integration and no mesh traffic beyond the local node.
+        """
+        own = self._self_node
+        if own is None:
+            resp = await http.get(f"{self._base_url}/node", headers={"Accept": "application/json"})
+            resp.raise_for_status()
+            own = _parse_node_info(resp.json())
+        own_rloc = _rloc16_int(own.rloc16)
+        return own_rloc, await self._query_router(http, own_rloc, types)
+
+    async def _router_rlocs(self, http: httpx.AsyncClient) -> list[int]:
+        """RLOC16 of every router except the border router itself."""
+        own_rloc, entry = await self._own_entry(http, _ROUTE_TYPES)
+        return router_rlocs_from_route(entry, exclude=own_rloc) if entry else []
+
+    async def _scan_per_router(self, http: httpx.AsyncClient) -> tuple[list[Any], int]:
+        """Unicast the full diagnostic request to each router in turn.
+
+        Returns the raw replies (own node first) and the count of routers that
+        did not answer. Paced and capped so it never bursts onto the mesh.
+        """
+        own_rloc, own = await self._own_entry(http, _DIAG_TYPES)
+        if own is None:
+            return [], 0
+        entries: list[Any] = [own]
+        unreachable = 0
+        loop = asyncio.get_running_loop()
+        started = loop.time()
+        for rloc in router_rlocs_from_route(own, exclude=own_rloc):
+            if loop.time() - started > _SCAN_BUDGET:
+                unreachable += 1
+                continue
+            await asyncio.sleep(_UNICAST_GAP)
+            entry = await self._query_router(http, rloc, _DIAG_TYPES)
+            if entry is None:
+                unreachable += 1
+            else:
+                entries.append(entry)
+        return entries, unreachable
+
+    async def scan_diagnostics(self) -> ScanOutcome:
         """Actively scan the Thread mesh for fresh per-router telemetry.
 
-        Device action (TECHNICAL_DESIGN §3a/§3b, ISSUES.md I.18 / B.23): reaches
-        onto the mesh and wakes every router, so it runs only on an explicit
-        per-device button - never in sync or the background poll. Updates the
-        in-memory diagnostics cache used by render-time correlation and returns
-        the fresh results.
+        Device action (TECHNICAL_DESIGN §3a/§3b): reaches onto the mesh and wakes
+        every router, so it runs only on an explicit per-device button - never in
+        sync or the background poll. Tries the broadcast first; when that task
+        fails (one silent router fails all of it) it queries the routers one at
+        a time. Updates the in-memory diagnostics cache used by render-time
+        correlation. Raises ``RuntimeError`` when nothing answered, leaving the
+        previous cache untouched, so the action never reports an empty success.
         """
+        unreachable = 0
         async with httpx.AsyncClient(timeout=_DIAG_SCAN_TIMEOUT + 10) as http:
-            diag_data = await self._trigger_diagnostics(http)
-        diagnostics = [_parse_router(r) for r in (diag_data or [])]
+            raw = await self._broadcast_scan(http)
+            method = "broadcast"
+            if not raw:
+                method = "per-router"
+                try:
+                    raw, unreachable = await self._scan_per_router(http)
+                except Exception as exc:
+                    raise RuntimeError(f"Thread diagnostic scan failed: {exc}") from exc
+        if not raw:
+            raise RuntimeError(
+                "Thread diagnostic scan failed: the broadcast task failed and "
+                "no router answered the per-router fallback"
+            )
+        diagnostics = [_parse_router(r) for r in raw]
         self._diagnostics = diagnostics
-        return diagnostics
+        return ScanOutcome(
+            diagnostics=diagnostics,
+            method=method,
+            answered=len(diagnostics),
+            unreachable=unreachable,
+        )
+
+    async def _router_replies(
+        self, http: httpx.AsyncClient, stats: _WalkStats, *, budget: float
+    ) -> AsyncGenerator[tuple[int, str, list[str]]]:
+        """Walk the routers one at a time; yield ``(rloc16, ext_address, ipv6s)`` per reply.
+
+        The router list comes from the border router's own route table. Queries
+        are paced (``_UNICAST_GAP``) and the whole walk is capped at *budget*
+        seconds. Routers that do not answer are counted in ``stats.failed``.
+        Raises ``RuntimeError`` when the router list cannot be read.
+        """
+        from ..correlate import normalize_ip, normalize_mac
+
+        rlocs = await self._router_rlocs(http)
+        if not rlocs:
+            raise RuntimeError("Could not read the Thread router list from the border router")
+        loop = asyncio.get_running_loop()
+        started = loop.time()
+        for rloc in rlocs:
+            if loop.time() - started > budget:
+                return
+            if stats.queried + stats.failed:
+                await asyncio.sleep(_UNICAST_GAP)
+            entry = await self._query_router(http, rloc, _LOCATE_TYPES)
+            ext = normalize_mac(str(entry.get("extAddress", ""))) if entry else None
+            if entry is None or ext is None:
+                stats.failed += 1
+                continue
+            stats.queried += 1
+            addrs = [a for a in map(normalize_ip, entry.get("ipv6Addresses") or []) if a]
+            yield rloc, ext, addrs
+
+    async def locate_thread_node(self, device: Any, session: Any) -> Any:
+        """Find which Thread router *device* is and persist its extended address.
+
+        Device action (TECHNICAL_DESIGN §3a/§3b): unicasts one router at a time,
+        stops at the first reply whose IPv6 list contains one of the device's
+        stored addresses, and writes ``thread_ext_address`` to the device's OTBR
+        integration data. Every other registry Device recognised in a reply on
+        the way is recorded too - that data was already received.
+        """
+        from ...models import Device
+        from ..base import ActionResult
+        from ..correlate import AddressIndex, device_ipv6_addresses
+        from ..data import merge as merge_integration_data
+
+        wanted = set(device_ipv6_addresses(session, device.id))
+        if not wanted:
+            return ActionResult(message="No IPv6 address is stored for this device")
+
+        index = AddressIndex(session)
+        stats = _WalkStats()
+        also: list[str] = []
+        found_ext: str | None = None
+        found_rloc: int | None = None
+
+        async with self._mesh_lock, httpx.AsyncClient(timeout=_UNICAST_TIMEOUT + 10) as http:
+            async with aclosing(
+                self._router_replies(http, stats, budget=_LOCATE_BUDGET)
+            ) as replies:
+                async for rloc, ext, addrs in replies:
+                    if wanted.intersection(addrs):
+                        merge_integration_data(
+                            session,
+                            device_id=device.id,
+                            integration=self.slug,
+                            payload={"thread_ext_address": ext},
+                        )
+                        found_ext, found_rloc = ext, rloc
+                        break
+                    owner = index.match(ipv6s=addrs)
+                    other = session.get(Device, owner) if owner and owner != device.id else None
+                    if other is not None:
+                        merge_integration_data(
+                            session,
+                            device_id=other.id,
+                            integration=self.slug,
+                            payload={"thread_ext_address": ext},
+                        )
+                        also.append(other.name)
+
+        extra = f" Also identified: {', '.join(also)}." if also else ""
+        if found_ext is not None and found_rloc is not None:
+            return ActionResult(
+                message=f"Located on router {found_ext} (RLOC16 0x{found_rloc:04X}).{extra}",
+                data={"thread_ext_address": found_ext},
+            )
+        if stats.queried == 0:
+            raise RuntimeError(f"No router answered ({stats.failed} unreachable)")
+        return ActionResult(
+            message=(
+                f"Not found among {stats.queried} answering routers ({stats.failed} unreachable). "
+                f"A sleepy end device is not a router and cannot be located this way.{extra}"
+            )
+        )
+
+    async def auto_locate(self) -> str | None:
+        """Identify unrecognised Thread routers on its own; a summary, or None if idle.
+
+        Runs after an OTBR poll when the user's auto-locate setting is on
+        (default). It acts only when an unidentified Thread router is in the
+        saved topology *and* a registry Device could be that router (a Thread
+        Device with a stored IPv6 address whose extended address is unknown or
+        no longer on the mesh); otherwise it sends nothing. One paced unicast
+        walk records the extended address of every registry Device it
+        recognises, and stops as soon as every unresolved router has answered.
+        A router that stays unresolved is not queried again for several hours.
+        """
+        from sqlmodel import Session, select
+
+        from ...audit import log as audit_log
+        from ...database import engine
+        from ...models import Device
+        from ..correlate import AddressIndex, device_ipv6_addresses, normalize_mac
+        from ..data import merge as merge_integration_data
+        from ..data import read as read_integration_data
+        from ..matter_server.server_client import load_topology
+        from ..settings_store import otbr_auto_locate_enabled
+
+        if self._mesh_lock.locked():
+            return None
+        loop = asyncio.get_running_loop()
+        with Session(engine) as db:
+            if not otbr_auto_locate_enabled(db):
+                return None
+            nodes = (load_topology(db) or {}).get("nodes") or []
+            on_mesh: set[str] = set()
+            unknown: set[str] = set()
+            for node in nodes:
+                ext = normalize_mac(node["ext_address"]) if node.get("ext_address") else None
+                if ext:
+                    on_mesh.add(ext)
+                    if node.get("kind") == "thread_unknown":
+                        unknown.add(ext)
+            if not unknown:
+                return None
+            index = AddressIndex(db)
+            now = loop.time()
+            targets = {
+                ext
+                for ext in unknown
+                if index.match(macs=[ext]) is None
+                and now - self._auto_locate_attempts.get(ext, -_AUTO_LOCATE_COOLDOWN)
+                >= _AUTO_LOCATE_COOLDOWN
+            }
+            if not targets:
+                return None
+            has_candidate = False
+            for dev in db.exec(select(Device)).all():
+                if "thread" not in (dev.network_type or []) or not device_ipv6_addresses(
+                    db, dev.id
+                ):
+                    continue
+                stored = (
+                    read_integration_data(db, device_id=dev.id, integration=self.slug) or {}
+                ).get("thread_ext_address")
+                if not stored or normalize_mac(str(stored)) not in on_mesh:
+                    has_candidate = True
+                    break
+            if not has_candidate:
+                return None
+
+            stats = _WalkStats()
+            seen: set[str] = set()
+            identified: list[str] = []
+            async with self._mesh_lock, httpx.AsyncClient(timeout=_UNICAST_TIMEOUT + 10) as http:
+                async with aclosing(
+                    self._router_replies(http, stats, budget=_LOCATE_BUDGET)
+                ) as replies:
+                    async for _rloc, ext, addrs in replies:
+                        seen.add(ext)
+                        owner = index.match(ipv6s=addrs)
+                        device = db.get(Device, owner) if owner else None
+                        if device is not None:
+                            merge_integration_data(
+                                db,
+                                device_id=device.id,
+                                integration=self.slug,
+                                payload={"thread_ext_address": ext},
+                            )
+                            identified.append(device.name)
+                        if targets <= seen:
+                            break
+            for ext in targets:
+                self._auto_locate_attempts[ext] = now
+            summary = (
+                f"auto-locate: identified {len(identified)} Thread device(s)"
+                f"{' (' + ', '.join(identified) + ')' if identified else ''}; "
+                f"reached {len(targets & seen)} of {len(targets)} unresolved routers"
+            )
+            audit_log(db, action="otbr.auto_locate", entity="integration:otbr", reason=summary)
+            db.commit()
+            return summary
+
+    async def run_auto_locate(self) -> None:
+        """``auto_locate()`` that never raises: a failure must not fail the poll or sync."""
+        try:
+            summary = await self.auto_locate()
+            if summary:
+                logger.info("OTBR %s", summary)
+        except Exception:
+            logger.warning("OTBR auto-locate failed", exc_info=True)
 
     def device_actions(self) -> list:
-        """Declare the ``scan_diagnostics`` retrieve-kind device action (B.13)."""
+        """Declare the OTBR ``retrieve``-kind device actions (B.13).
+
+        ``scan_diagnostics`` broadcasts to every router; ``locate_thread_node``
+        unicasts one router at a time to learn which router a device is.
+        """
         from ..base import ActionResult, DeviceAction
+        from ..correlate import device_ipv6_addresses
 
         client = self
 
         async def _run(_device: Any, _session: Any) -> ActionResult:
-            await client.scan_diagnostics()
-            return ActionResult(message="Thread diagnostics scan complete")
+            outcome = await client.scan_diagnostics()
+            return ActionResult(message=outcome.message)
 
         def _applicable(device: Any, _session: Any) -> bool:
             return "thread" in (device.network_type or [])
+
+        async def _run_locate(device: Any, session: Any) -> ActionResult:
+            return await client.locate_thread_node(device, session)
+
+        def _locate_applicable(device: Any, session: Any) -> bool:
+            return "thread" in (device.network_type or []) and bool(
+                device_ipv6_addresses(session, device.id)
+            )
 
         return [
             DeviceAction(
@@ -692,7 +1079,14 @@ class OTBRClient(PolledIntegration):
                 kind="retrieve",
                 applicable_fn=_applicable,
                 run_fn=_run,
-            )
+            ),
+            DeviceAction(
+                key="locate_thread_node",
+                label="Locate on Thread network",
+                kind="retrieve",
+                applicable_fn=_locate_applicable,
+                run_fn=_run_locate,
+            ),
         ]
 
     async def poll_once(
@@ -891,6 +1285,7 @@ class OTBRClient(PolledIntegration):
             raise
         logger.debug("OTBR polled successfully")
         self._status = ClientStatus.connected
+        await self.run_auto_locate()
 
     def _on_poll_error(self, exc: Exception, attempt: int, delay: int) -> None:
         if attempt == 1:

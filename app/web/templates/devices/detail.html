@@ -68,11 +68,11 @@ html.dark #qr-svg img { filter: invert(1); }
   </div>
   <div class="grid grid-cols-2 gap-2 sm:flex sm:gap-2 sm:mt-1">
     <a href="{{ url('/devices/' + device.id + '/scan') }}"
-       class="border border-blue-300 text-blue-700 px-3 py-1.5 rounded text-sm hover:bg-blue-50 text-center">{{ t.device.detail.scan_btn }}</a>
+       class="mr-control border border-blue-300 text-blue-700 px-3 py-1.5 rounded text-sm hover:bg-blue-50 text-center">{{ t.device.detail.scan_btn }}</a>
     <a href="{{ url('/devices/' + device.id + '/edit') }}"
-       class="border border-gray-300 px-3 py-1.5 rounded text-sm hover:bg-gray-50 text-center">{{ t.device.detail.edit_btn }}</a>
+       class="mr-control border border-gray-300 px-3 py-1.5 rounded text-sm hover:bg-gray-50 text-center">{{ t.device.detail.edit_btn }}</a>
     <a href="{{ url('/devices/' + device.id + '/merge') }}"
-       class="border border-gray-300 px-3 py-1.5 rounded text-sm hover:bg-gray-50 text-center">{{ t.device.detail.merge_btn }}</a>
+       class="mr-control border border-gray-300 px-3 py-1.5 rounded text-sm hover:bg-gray-50 text-center">{{ t.device.detail.merge_btn }}</a>
     <button
       hx-delete="{{ url('/devices/' + device.id) }}"
       hx-confirm="{{ t.device.detail.delete_confirm | replace('{name}', device.name) }}"
@@ -258,7 +258,7 @@ html.dark #qr-svg img { filter: invert(1); }
 {% macro integration_icon(cls) %}{% if cls %}<span class="{{ cls }}" aria-hidden="true"></span> {% endif %}{% endmacro %}
 
 {# B.13: render a device action button. kind∈{retrieve,test} → neutral/reads; write → confirm+destructive #}
-{% macro device_action_button(action, device_id, slug) %}
+{% macro device_action_button(action, device_id, slug, source_label, source_icon) %}
 {% set is_write = action.kind == 'write' %}
 <button
   hx-post="{{ url('/api/integrations/' + slug + '/devices/' + device_id + '/actions/' + action.key) }}"
@@ -266,9 +266,11 @@ html.dark #qr-svg img { filter: invert(1); }
   hx-disabled-elt="this"
   data-mr-action-label="{{ action.label }}"
   {% if is_write %}hx-confirm="This will modify the device. Continue?"{% endif %}
-  class="no-print text-xs px-2 py-0.5 rounded {% if is_write %}border border-red-300 text-red-600 hover:bg-red-50{% else %}bg-blue-600 text-white hover:bg-blue-700{% endif %}"
-  title="{{ 'Reads device: actively queries the device for fresh data' if not is_write else 'Modifies device: confirmation required' }}">
-  {{ action.label }} <span class="{% if is_write %}text-red-400{% else %}text-blue-300{% endif %}">· {{ 'reads device' if not is_write else 'modifies device' }}</span>
+  class="no-print inline-flex items-center gap-1.5 text-xs px-2 py-0.5 rounded {% if is_write %}border border-red-300 text-red-600 hover:bg-red-50{% else %}bg-blue-600 text-white hover:bg-blue-700{% endif %}"
+  aria-label="{{ source_label }}: {{ action.label }}"
+  title="{{ source_label }} - {{ 'Reads device: actively queries the device for fresh data' if not is_write else 'Modifies device: confirmation required' }}">
+  {% if source_icon %}<span class="{{ source_icon }} text-base shrink-0" aria-hidden="true"></span>{% endif %}
+  <span>{{ action.label }}</span>
 </button>
 {% endmacro %}
 
@@ -309,13 +311,7 @@ html.dark #qr-svg img { filter: invert(1); }
     <div class="flex items-center gap-1.5">
       {% set _net_type = (matter_network.network_type if matter_network and matter_network.network_type else None) or (mdns_networking.transport if mdns_networking else None) %}
       {% if _net_type %}
-      <span class="text-xs font-medium px-2 py-0.5 rounded-full
-        {% if _net_type == 'wifi' %}bg-blue-100 text-blue-700
-        {% elif _net_type == 'thread' %}bg-teal-100 text-teal-700
-        {% elif _net_type == 'ethernet' %}bg-green-100 text-green-700
-        {% else %}bg-gray-100 text-gray-500{% endif %}">
-        {{ _net_type | upper }}
-      </span>
+      <span class="mr-net-pill" data-network="{{ _net_type }}">{{ _net_type | upper }}</span>
       {% endif %}
     </div>
   </div>
@@ -586,12 +582,12 @@ html.dark #qr-svg img { filter: invert(1); }
         <h3 class="text-sm font-semibold text-gray-500 uppercase">{{ integration_icon(integration_icons.get('matter_server')) }}Matter Server</h3>
         <div class="flex gap-1.5">
           {% for action in applicable_device_actions.get('matter_server', []) %}
-            {{ device_action_button(action, device.id, 'matter_server') }}
+            {{ device_action_button(action, device.id, 'matter_server', 'Matter Server', integration_icons.get('matter_server')) }}
           {% endfor %}
           {% if matter_membership %}
           <button type="button"
                   onclick="unlinkMatterDevice('{{ device.id }}')"
-                  class="no-print text-xs border border-gray-300 px-3 py-1 rounded hover:bg-gray-50 text-gray-600">
+                  class="no-print border border-red-200 text-red-600 px-3 py-1.5 rounded text-sm hover:bg-red-50 text-center">
             Unlink
           </button>
           {% endif %}
@@ -621,13 +617,13 @@ html.dark #qr-svg img { filter: invert(1); }
     </div>
     {% endif %}
 
-    {% if thread_link or integration_data_by_slug.get('otbr') %}
+    {% if thread_link or integration_data_by_slug.get('otbr') or applicable_device_actions.get('otbr') %}
     <div class="py-5 first:pt-0 last:pb-0">
       <div class="flex items-center justify-between mb-3">
         <h3 class="text-sm font-semibold text-gray-500 uppercase">{{ integration_icon(integration_icons.get('otbr')) }}Thread Network</h3>
         <div class="flex gap-1.5">
           {% for action in applicable_device_actions.get('otbr', []) %}
-            {{ device_action_button(action, device.id, 'otbr') }}
+            {{ device_action_button(action, device.id, 'otbr', 'Thread', integration_icons.get('otbr')) }}
           {% endfor %}
         </div>
       </div>
@@ -642,7 +638,7 @@ html.dark #qr-svg img { filter: invert(1); }
         {% if ha_link %}
         <button type="button"
                 onclick="unlinkHaDevice('{{ device.id }}')"
-                class="no-print text-xs border border-gray-300 px-3 py-1 rounded hover:bg-gray-50 text-gray-600">
+                class="no-print border border-red-200 text-red-600 px-3 py-1.5 rounded text-sm hover:bg-red-50 text-center">
           Unlink
         </button>
         {% endif %}

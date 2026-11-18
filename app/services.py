@@ -1,9 +1,12 @@
 """Shared business logic called by both API routes and web routes."""
 
+import json
+import re
 from datetime import UTC, datetime
 from typing import Any
 
-from sqlmodel import Session, select
+from sqlalchemy import ColumnElement, and_
+from sqlmodel import Session, col, select
 
 from .audit import log as audit_log
 from .homekit import (
@@ -31,6 +34,8 @@ from .models import (
     Attachment,
     Device,
     DeviceFabricMembership,
+    DeviceIntegrationData,
+    DeviceLink,
     DeviceProtocol,
     FieldSource,
     Product,
@@ -65,6 +70,56 @@ def set_product_field(product: Product, field: str, value: Any, source: FieldSou
         setattr(product, source_attr, source)
         return True
     return False
+
+
+_VID_PID_MAX = 0xFFFF
+_SEARCH_SPLIT = re.compile(r"[\s/,]+")
+_HEX_PREFIXED = re.compile(r"0x[0-9a-f]{1,4}", re.IGNORECASE)
+_HEX4 = re.compile(r"[0-9a-f]{4}", re.IGNORECASE)
+_DECIMAL = re.compile(r"[0-9]{1,5}")
+
+
+def vid_pid_candidates(token: str) -> set[int]:
+    """Every VID/PID value a search token can mean; empty when it is not numeric.
+
+    ``0xFFF1`` is hex. A bare run of digits is decimal (``65521``), and when it
+    is exactly four characters it is also read as hex (``4488`` / ``fff1``),
+    because the UI shows identifiers as four hex digits. Values above 0xFFFF are
+    not valid identifiers and are dropped.
+    """
+    found: set[int] = set()
+    if _HEX_PREFIXED.fullmatch(token):
+        found.add(int(token, 16))
+    else:
+        if _DECIMAL.fullmatch(token):
+            found.add(int(token, 10))
+        if _HEX4.fullmatch(token):
+            found.add(int(token, 16))
+    return {n for n in found if n <= _VID_PID_MAX}
+
+
+def product_vid_pid_clauses(q: str) -> list[ColumnElement[bool]]:
+    """SQL conditions (to be OR-ed with the text search) matching a Product's VID/PID.
+
+    A query of exactly two numeric tokens (``0xFFF1 / 0x8001``, the form the UI
+    displays) matches that VID *and* PID. Otherwise each numeric token matches
+    a VID or a PID. Non-numeric tokens contribute nothing here.
+    """
+    tokens = [t for t in _SEARCH_SPLIT.split(q.strip()) if t]
+    candidates = [vid_pid_candidates(t) for t in tokens]
+    if len(tokens) == 2 and all(candidates):
+        return [
+            and_(
+                col(Product.vendor_id).in_(sorted(candidates[0])),
+                col(Product.product_id).in_(sorted(candidates[1])),
+            )
+        ]
+    clauses: list[ColumnElement[bool]] = []
+    for values in candidates:
+        if values:
+            clauses.append(col(Product.vendor_id).in_(sorted(values)))
+            clauses.append(col(Product.product_id).in_(sorted(values)))
+    return clauses
 
 
 def resolve_product(
@@ -435,8 +490,8 @@ _MERGE_PREVIEW_LABELS = [
 
 def build_merge_preview(source: Device, target: Device) -> list[dict]:
     """Return per-field preview of which value wins after merge."""
-    source_is_manual = source.name_source != FieldSource.ha
-    target_is_manual = target.name_source != FieldSource.ha
+    source_is_manual = source.name_source == FieldSource.user
+    target_is_manual = target.name_source == FieldSource.user
     rows = []
     for label, field in _MERGE_PREVIEW_LABELS:
         sv = getattr(source, field)
@@ -461,11 +516,34 @@ def build_merge_preview(source: Device, target: Device) -> list[dict]:
     return rows
 
 
+def delete_device(session: Session, device: Device) -> None:
+    """Delete a Device together with everything keyed to it by id.
+
+    Properties, attachments and fabric memberships cascade through the ORM.
+    Integration links and per-device integration data have no database-level
+    cascade, so they are removed here: a leftover row would keep pointing at a
+    Device that no longer exists, hide its external id from link pickers, and
+    make the addresses it stored look shared by two devices. The caller audits
+    and commits.
+    """
+    for link in session.exec(
+        select(DeviceLink).where(DeviceLink.device_id == device.id)  # type: ignore[attr-defined]
+    ).all():
+        session.delete(link)
+    for row in session.exec(
+        select(DeviceIntegrationData).where(
+            DeviceIntegrationData.device_id == device.id  # type: ignore[attr-defined]
+        )
+    ).all():
+        session.delete(row)
+    session.delete(device)
+
+
 def merge_devices(session: Session, source_id: str, target_id: str) -> None:
     """Merge source into target, then delete source.
 
     Policy: target wins, source fills blanks.
-    Name exception: the row without ha_device_id (manual side) always wins.
+    Name exception: a user-entered source name wins over an imported target name.
     """
     source = session.get(Device, source_id)
     target = session.get(Device, target_id)
@@ -480,8 +558,8 @@ def merge_devices(session: Session, source_id: str, target_id: str) -> None:
             f"{tgt_p} device - commissioning protocols must match."
         )
 
-    source_is_manual = source.name_source != FieldSource.ha
-    target_is_manual = target.name_source != FieldSource.ha
+    source_is_manual = source.name_source == FieldSource.user
+    target_is_manual = target.name_source == FieldSource.user
 
     for field in _MERGE_SCALAR_FIELDS:
         if getattr(target, field) is None:
@@ -489,6 +567,7 @@ def merge_devices(session: Session, source_id: str, target_id: str) -> None:
 
     if source_is_manual and not target_is_manual:
         target.name = source.name
+        target.name_source = source.name_source
 
     target.updated_at = datetime.now(UTC)
     session.add(target)
@@ -507,25 +586,57 @@ def merge_devices(session: Session, source_id: str, target_id: str) -> None:
         mem.device_id = target_id
         session.add(mem)
 
-    # Move the ha_core DeviceLink: if target has no link, adopt source's; else drop source's.
-    from .models import DeviceLink
-
-    src_link = session.exec(
-        select(DeviceLink)
-        .where(DeviceLink.device_id == source_id)  # type: ignore[attr-defined]
-        .where(DeviceLink.integration == "ha_core")  # type: ignore[attr-defined]
-    ).first()
-    if src_link:
+    # Preserve one link and one retrieved-data row per integration. A target
+    # link wins when both records have one (for example, a HAP id on the
+    # target and a stale LTPDU EUI-64 link on the source).
+    for src_link in session.exec(
+        select(DeviceLink).where(DeviceLink.device_id == source_id)  # type: ignore[attr-defined]
+    ).all():
         tgt_link = session.exec(
             select(DeviceLink)
             .where(DeviceLink.device_id == target_id)  # type: ignore[attr-defined]
-            .where(DeviceLink.integration == "ha_core")  # type: ignore[attr-defined]
+            .where(DeviceLink.integration == src_link.integration)  # type: ignore[attr-defined]
         ).first()
         if tgt_link is None:
             src_link.device_id = target_id
             session.add(src_link)
         else:
             session.delete(src_link)
+
+    for src_row in session.exec(
+        select(DeviceIntegrationData).where(
+            DeviceIntegrationData.device_id == source_id  # type: ignore[attr-defined]
+        )
+    ).all():
+        tgt_row = session.exec(
+            select(DeviceIntegrationData)
+            .where(DeviceIntegrationData.device_id == target_id)  # type: ignore[attr-defined]
+            .where(DeviceIntegrationData.integration == src_row.integration)  # type: ignore[attr-defined]
+        ).first()
+        if tgt_row is None:
+            src_row.device_id = target_id
+            session.add(src_row)
+            continue
+        try:
+            src_payload = json.loads(src_row.payload_json)
+            tgt_payload = json.loads(tgt_row.payload_json)
+        except (TypeError, ValueError):
+            src_payload, tgt_payload = {}, {}
+        if isinstance(src_payload, dict) and isinstance(tgt_payload, dict):
+            merged = dict(src_payload)
+            for key, value in tgt_payload.items():
+                if key not in merged or (
+                    value is not None and value != "" and value != [] and value != {}
+                ):
+                    merged[key] = value
+            for key in ("ipv4_addresses", "ipv6_addresses"):
+                if key in src_payload or key in tgt_payload:
+                    merged[key] = sorted(
+                        set(src_payload.get(key) or []) | set(tgt_payload.get(key) or [])
+                    )
+            tgt_row.payload_json = json.dumps(merged)
+            session.add(tgt_row)
+        session.delete(src_row)
 
     session.flush()
     session.delete(source)

@@ -7,6 +7,8 @@ browser glue is exercised manually, not here.
 
 from __future__ import annotations
 
+import json
+
 import pytest
 from sqlalchemy.pool import StaticPool
 from sqlmodel import Session, SQLModel, create_engine, select
@@ -18,6 +20,7 @@ from app.integrations.mdns.client import (
     parse_hap_service,
     parse_matter_service,
     project_discovered,
+    project_ltpdu,
     project_matter,
 )
 from app.models import (
@@ -114,6 +117,22 @@ def _devices(engine):
         return list(s.exec(select(Device)).all())
 
 
+def _ltpdu(eui64: str, hap_id: str | None, **over) -> dict:
+    record = {
+        "eui64": eui64,
+        "id": hap_id,
+        "id_is_hap": hap_id is not None,
+        "firmware": "3.0.2",
+        "thread_ext_pan_id": "5059B0077AED49A3",
+        "model": "NL45",
+        "thread_ext_addr": None,
+        "mesh_local_ipv6": [],
+        "_instance_label": eui64,
+    }
+    record.update(over)
+    return record
+
+
 def test_project_creates_homekit_device(engine, client):
     with Session(engine) as s:
         client_result = project_discovered(s, [_acc("1D:C3:F4:EF:74:68")], integration=client)
@@ -158,6 +177,74 @@ def test_project_dedupes_on_homekit_accessory_id(engine, client):
     assert len(_devices(engine)) == 1  # no duplicate
 
 
+def test_project_refreshes_stale_accessory_id_for_a_linked_device(engine, client):
+    """An accessory re-paired under a new HAP Device ID keeps its Device: the stored
+    id is refreshed from the advertisement instead of staying stale forever."""
+    with Session(engine) as s:
+        dev = Device(
+            name="Nanoleaf", protocol=DeviceProtocol.homekit, homekit_accessory_id="OLD:ID"
+        )
+        s.add(dev)
+        s.commit()
+        s.refresh(dev)
+        s.add(DeviceLink(device_id=dev.id, integration="mdns", external_id="NEW:ID"))
+        s.commit()
+        dev_id = dev.id
+
+    with Session(engine) as s:
+        res = project_discovered(s, [_acc("NEW:ID", transport="thread")], integration=client)
+    assert res["created"] == 0
+    assert len(_devices(engine)) == 1
+    with Session(engine) as s:
+        assert s.get(Device, dev_id).homekit_accessory_id == "NEW:ID"
+
+
+def test_project_refreshes_stale_accessory_id_matched_by_setup_hash(engine, client):
+    """Setup-hash proves the accessory, so a stale stored id is replaced there too."""
+    with Session(engine) as s:
+        dev = Device(
+            name="Scanned Nanoleaf",
+            protocol=DeviceProtocol.homekit,
+            homekit_accessory_id="35:27:C0:90:BC:5B",
+        )
+        s.add(dev)
+        s.commit()
+        s.refresh(dev)
+        s.add(Property(device_id=dev.id, type=PropertyType.discriminator, value="2XGA"))
+        s.commit()
+        dev_id = dev.id
+
+    acc = _acc("AF:96:99:21:95:9E", model="NL45", category_id=5, setup_hash="wrmPEQ==")
+    with Session(engine) as s:
+        project_discovered(s, [acc], integration=client)
+    with Session(engine) as s:
+        assert s.get(Device, dev_id).homekit_accessory_id == "AF:96:99:21:95:9E"
+
+
+def test_project_does_not_steal_an_accessory_id_another_device_holds(engine, client):
+    with Session(engine) as s:
+        holder = Device(
+            name="Holder", protocol=DeviceProtocol.homekit, homekit_accessory_id="TAKEN:ID"
+        )
+        linked = Device(
+            name="Linked", protocol=DeviceProtocol.homekit, homekit_accessory_id="STALE:ID"
+        )
+        s.add_all([holder, linked])
+        s.commit()
+        s.refresh(linked)
+        s.add(DeviceLink(device_id=linked.id, integration="mdns", external_id="TAKEN:ID"))
+        s.commit()
+        linked_id = linked.id
+
+    with Session(engine) as s:
+        project_discovered(s, [_acc("TAKEN:ID")], integration=client)
+    with Session(engine) as s:
+        # The mdns link still resolves the device, but the id stays with its holder.
+        assert s.get(Device, linked_id).homekit_accessory_id == "STALE:ID"
+        holders = s.exec(select(Device).where(Device.homekit_accessory_id == "TAKEN:ID")).all()
+        assert [d.name for d in holders] == ["Holder"]
+
+
 def test_project_correlates_via_setup_hash(engine, client):
     """A scanned device (stored Setup ID) links to the discovered accessory
     whose setup hash it produces - no new device."""
@@ -180,6 +267,55 @@ def test_project_correlates_via_setup_hash(engine, client):
         assert link and link.device_id == dev_id  # linked to the scanned device
         dev = s.get(Device, dev_id)
         assert dev.homekit_accessory_id == "AF:96:99:21:95:9E"  # identity backfilled
+
+
+def test_ltpdu_uses_saved_eui64_when_hap_id_disappears(engine, client):
+    eui64 = "70AC08FFFEA8269A"
+    hap_id = "A5:E1:CC:77:FC:3A"
+    with Session(engine) as s:
+        project_discovered(s, [_acc(hap_id, transport="thread")], integration=client)
+        first = project_ltpdu(s, [_ltpdu(eui64, hap_id)], integration=client)
+        second = project_ltpdu(s, [_ltpdu(eui64, None)], integration=client)
+    assert first["created"] == 0
+    assert second["created"] == 0
+    devices = _devices(engine)
+    assert len(devices) == 1
+    with Session(engine) as s:
+        link = s.exec(select(DeviceLink).where(DeviceLink.device_id == devices[0].id)).one()
+        data = s.exec(
+            select(DeviceIntegrationData).where(DeviceIntegrationData.device_id == devices[0].id)
+        ).one()
+        assert link.external_id == hap_id
+        assert json.loads(data.payload_json)["ltpdu_eui64"] == eui64
+
+
+def test_ltpdu_prefers_hap_identity_over_conflicting_eui64_link(engine, client):
+    eui64 = "70AC08FFFEA8269A"
+    hap_id = "A5:E1:CC:77:FC:3A"
+    with Session(engine) as s:
+        project_discovered(s, [_acc(hap_id, transport="thread")], integration=client)
+        canonical = s.exec(select(Device).where(Device.homekit_accessory_id == hap_id)).one()
+        shell = Device(name=eui64, protocol=DeviceProtocol.homekit)
+        s.add(shell)
+        s.flush()
+        s.add(DeviceLink(device_id=shell.id, integration="mdns", external_id=eui64))
+        s.add(
+            DeviceIntegrationData(
+                device_id=shell.id,
+                integration="mdns",
+                payload_json=json.dumps({"ltpdu_eui64": eui64}),
+            )
+        )
+        s.commit()
+        result = project_ltpdu(s, [_ltpdu(eui64, hap_id, firmware="4.0.0")], integration=client)
+        canonical_data = s.exec(
+            select(DeviceIntegrationData).where(DeviceIntegrationData.device_id == canonical.id)
+        ).one()
+        assert json.loads(canonical_data.payload_json)["ltpdu_firmware"] == "4.0.0"
+        ambiguous = project_ltpdu(s, [_ltpdu(eui64, None)], integration=client)
+    assert result["created"] == 0
+    assert ambiguous["skipped"] == 1
+    assert len(_devices(engine)) == 2
 
 
 def test_project_skips_without_can_create(engine):

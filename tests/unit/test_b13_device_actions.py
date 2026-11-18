@@ -149,19 +149,18 @@ def test_otbr_client_declares_scan_diagnostics():
     from app.integrations.otbr.client import OTBRClient
 
     client = OTBRClient("http://otbr.local")
-    actions = client.device_actions()
-    assert len(actions) == 1
-    action = actions[0]
-    assert action.key == "scan_diagnostics"
-    assert action.kind == "retrieve"
-    assert action.label
+    actions = {a.key: a for a in client.device_actions()}
+    assert set(actions) == {"scan_diagnostics", "locate_thread_node"}
+    for action in actions.values():
+        assert action.kind == "retrieve"
+        assert action.label
 
 
 def test_otbr_scan_applicable_when_thread_in_network_type():
     from app.integrations.otbr.client import OTBRClient
 
     client = OTBRClient("http://otbr.local")
-    action = client.device_actions()[0]
+    action = next(a for a in client.device_actions() if a.key == "scan_diagnostics")
     session = MagicMock()
 
     d_thread = MagicMock()

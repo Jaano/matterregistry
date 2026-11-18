@@ -2,129 +2,90 @@
 {% block title %}{{ t.network.title }} - {{ t.nav.brand }}{% endblock %}
 {% block content %}
 
-<h1 class="text-2xl font-bold mb-4">{{ t.network.title }}</h1>
-
-<section class="bg-white rounded shadow p-4 mb-6">
-  <h2 class="text-lg font-semibold mb-1">{{ t.network.topology_heading }}</h2>
+<section class="mr-panel mb-6">
+  <div class="mr-results-head mr-network-results-head">
+    {% if active_view == 'table' %}<span>{{ t.network.connections_heading }} ({{ link_rows | length }})</span>{% else %}<span aria-hidden="true"></span>{% endif %}
+    <div class="mr-view-switch" role="group" aria-label="{{ t.device.list.view_label }}">
+      <a class="mr-view-option" href="{{ url('/network') }}?view=mesh" {% if active_view == 'mesh' %}aria-current="true"{% endif %}>{{ t.network.mesh_view }}</a>
+      <a class="mr-view-option" href="{{ url('/network') }}?view=table" {% if active_view == 'table' %}aria-current="true"{% endif %}>{{ t.device.list.table_view }}</a>
+    </div>
+  </div>
   {% if not has_topology %}
-  <p class="text-sm text-gray-500">{{ t.network.empty_topology }}</p>
+    <p class="mr-empty">{{ t.network.empty_topology }}</p>
+  {% elif active_view == 'table' %}
+    {% if link_rows %}
+    <div class="mr-table-wrap">
+      <table class="mr-device-table mr-network-table">
+        <thead><tr><th>{{ t.network.col_from }}</th><th>{{ t.network.col_to }}</th><th>{{ t.network.col_network }}</th><th>{{ t.network.col_link_quality }}</th><th>{{ t.network.col_rssi }}</th></tr></thead>
+        <tbody>
+          {% for c in link_rows %}
+          <tr>
+            <td>{% if c.source_device_id %}<a class="mr-network-device-link" href="{{ url('/devices/' ~ c.source_device_id) }}">{{ c.source }}</a>{% else %}{{ c.source }}{% endif %}</td>
+            <td>{% if c.target_device_id %}<a class="mr-network-device-link" href="{{ url('/devices/' ~ c.target_device_id) }}">{{ c.target }}</a>{% else %}{{ c.target }}{% endif %}</td>
+            <td>{% if c.network == 'thread' %}<span class="icon-thread mr-network-type-icon" role="img" aria-label="{{ t.network.thread_link_legend }}" title="{{ t.network.thread_link_legend }}"></span>{% elif c.network == 'wifi' %}<span class="icon-wifi mr-network-type-icon" role="img" aria-label="{{ t.network.wifi_link_legend }}" title="{{ t.network.wifi_link_legend }}"></span>{% else %}{{ c.network or '-' }}{% endif %}</td>
+            <td>{{ c.lqi_level if c.lqi_level is not none else '-' }}</td><td>{% if c.rssi is not none %}{{ c.rssi }} dBm{% else %}-{% endif %}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}<p class="mr-empty">{{ t.network.empty_links }}</p>{% endif %}
+  {% elif not node_rows %}
+    <p class="mr-empty">{{ t.network.empty_nodes }}</p>
   {% else %}
-  {% if collected_at %}
-  <p class="text-xs text-gray-400 mb-3">{{ t.network.collected }}: {{ collected_at }}</p>
+    <svg class="mr-role-defs" aria-hidden="true" focusable="false" width="0" height="0">
+      <symbol id="mr-role-border-router" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="4"/><circle cx="12" cy="12" r="1" fill="currentColor" stroke="none"/></symbol>
+      <symbol id="mr-role-wifi-ap" viewBox="0 0 24 24"><path d="M3 8a13 13 0 0 1 18 0M6 11a9 9 0 0 1 12 0M9 14a5 5 0 0 1 6 0M12 17v4m-5 0h10"/></symbol>
+      <symbol id="mr-role-router" viewBox="0 0 24 24"><path d="M12 6v7m0 0-6 5m6-5 6 5"/><circle cx="12" cy="5" r="2" fill="currentColor" stroke="none"/><circle cx="5" cy="19" r="2" fill="currentColor" stroke="none"/><circle cx="19" cy="19" r="2" fill="currentColor" stroke="none"/></symbol>
+      <symbol id="mr-role-end-device" viewBox="0 0 24 24"><path d="m12 3 9 9-9 9-9-9z"/><circle cx="12" cy="12" r="2" fill="currentColor" stroke="none"/></symbol>
+      <symbol id="mr-role-sleepy-end-device" viewBox="0 0 24 24"><path d="M12 3a9 9 0 1 0 9 9c-4.9 1.4-10.4-4.1-9-9z" fill="currentColor" stroke="none"/></symbol>
+      <symbol id="mr-role-station" viewBox="0 0 24 24"><path d="M3 9a13 13 0 0 1 18 0M6 12a9 9 0 0 1 12 0M9 15a5 5 0 0 1 6 0"/><circle cx="12" cy="18" r="1.4" fill="currentColor" stroke="none"/></symbol>
+      <symbol id="mr-role-unknown" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M9.5 9a2.5 2.5 0 1 1 4.3 1.7c-1.2 1.2-1.8 1.5-1.8 3M12 17v.5"/></symbol>
+    </svg>
+    <div class="mr-network-viewport">
+      <div class="mr-network-graph" id="mr-network-graph" aria-label="{{ t.network.mesh_view }}">
+        <svg class="mr-links-svg" aria-hidden="true"></svg>
+        <div class="mr-room-grid">
+          {% for group in room_groups %}
+          <section class="mr-room" aria-label="{{ group.name }}">
+            <svg class="mr-room-shape" viewBox="0 0 280 240" preserveAspectRatio="none" aria-hidden="true"><path d="M132.6 3.2 Q140 0 147.4 3.2 L272.6 56.8 Q280 60 280 68 L280 172 Q280 180 272.6 183.2 L147.4 236.8 Q140 240 132.6 236.8 L7.4 183.2 Q0 180 0 172 L0 68 Q0 60 7.4 56.8 Z"/></svg>
+            <div class="mr-room-head" title="{{ group.name }}"><strong>{{ group.name }}</strong></div>
+            <div class="mr-node-list">
+              {% for n in group.nodes %}
+                {% set node_label = n.label ~ ' · ' ~ n.role ~ (' · ' ~ n.network if n.network else '') %}
+                {% if n.device_id %}<a class="mr-node" data-node-id="{{ n.id }}" data-role="{{ n.icon_role }}" href="{{ url('/devices/' ~ n.device_id) }}" aria-label="{{ node_label }}" title="{{ node_label }}">
+                {% else %}<span class="mr-node" data-node-id="{{ n.id }}" data-role="{{ n.icon_role }}" role="img" tabindex="0" aria-label="{{ node_label }}" title="{{ node_label }}">{% endif %}
+                  <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#mr-role-{{ n.icon_role | replace('_', '-') }}"/></svg>
+                {% if n.device_id %}</a>{% else %}</span>{% endif %}
+              {% endfor %}
+            </div>
+          </section>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+    <div class="mr-network-legend" aria-label="{{ t.network.col_role }}">
+      <div class="mr-role-legend">
+        <span><svg aria-hidden="true"><use href="#mr-role-border-router"/></svg>Border Router</span>
+        <span><svg aria-hidden="true"><use href="#mr-role-wifi-ap"/></svg>Wi-Fi AP</span>
+        <span><svg aria-hidden="true"><use href="#mr-role-router"/></svg>Router</span>
+        <span><svg aria-hidden="true"><use href="#mr-role-end-device"/></svg>End device</span>
+        <span><svg aria-hidden="true"><use href="#mr-role-sleepy-end-device"/></svg>Sleepy end</span>
+        <span><svg aria-hidden="true"><use href="#mr-role-station"/></svg>Wi-Fi station</span>
+      </div>
+      <div class="mr-graph-legend"><span data-network="thread">{{ t.network.thread_link_legend }}</span><span data-network="wifi">{{ t.network.wifi_link_legend }}</span><span class="mr-legend-heading">Link quality:</span><span data-lqi="0">0</span><span data-lqi="1">1</span><span data-lqi="2">2</span><span data-lqi="3">3</span></div>
+    </div>
+    <ul class="mr-link-list" hidden>
+      {% for c in link_rows %}
+      <li data-source="{{ c.source_id }}" data-target="{{ c.target_id }}" data-network="{{ c.network or '' }}" data-lqi="{{ c.lqi_level if c.lqi_level is not none else 'unknown' }}"></li>
+      {% endfor %}
+    </ul>
   {% endif %}
-  <div class="overflow-x-auto mb-6">
-    <table class="w-full text-sm">
-      <thead>
-        <tr class="text-left text-xs text-gray-500 border-b">
-          <th class="py-1 pr-3">{{ t.network.col_node }}</th>
-          <th class="py-1 pr-3">{{ t.network.col_kind }}</th>
-          <th class="py-1 pr-3">{{ t.network.col_role }}</th>
-          <th class="py-1 pr-3">{{ t.network.col_network }}</th>
-          <th class="py-1">{{ t.network.col_address }}</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for r in node_rows %}
-        <tr class="border-b border-gray-100">
-          <td class="py-1 pr-3">
-            {% if r.device_id %}<a class="text-blue-600 hover:underline" href="{{ url('/devices/' ~ r.device_id) }}">{{ r.label }}</a>{% else %}{{ r.label }}{% endif %}
-          </td>
-          <td class="py-1 pr-3 text-gray-600">{{ r.kind }}</td>
-          <td class="py-1 pr-3 text-gray-600">{{ r.role or '' }}</td>
-          <td class="py-1 pr-3 text-gray-600">{{ r.network or '' }}</td>
-          <td class="py-1 font-mono text-xs text-gray-500">{{ r.address or '' }}</td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
-  </div>
-
-  <h3 class="font-semibold mb-2">{{ t.network.connections_heading }}</h3>
-  <div class="overflow-x-auto">
-    <table class="w-full text-sm">
-      <thead>
-        <tr class="text-left text-xs text-gray-500 border-b">
-          <th class="py-1 pr-3">{{ t.network.col_from }}</th>
-          <th class="py-1 pr-3">{{ t.network.col_to }}</th>
-          <th class="py-1 pr-3">{{ t.network.col_network }}</th>
-          <th class="py-1 pr-3">{{ t.network.col_strength }}</th>
-          <th class="py-1">{{ t.network.col_signal }}</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for c in link_rows %}
-        <tr class="border-b border-gray-100">
-          <td class="py-1 pr-3">{{ c.source }}</td>
-          <td class="py-1 pr-3">{{ c.target }}</td>
-          <td class="py-1 pr-3 text-gray-600">{{ c.network or '' }}</td>
-          <td class="py-1 pr-3 text-gray-600">{{ c.strength }}</td>
-          <td class="py-1 font-mono text-xs text-gray-500">{{ c.signal }}</td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
-  </div>
-  {% endif %}
+  {% if collected_at %}<div class="mr-network-footer"><small>{{ t.network.collected }}: {{ collected_at }}</small></div>{% endif %}
 </section>
 
-<section class="bg-white rounded shadow p-4 mb-6">
-  <h2 class="text-lg font-semibold mb-2">{{ t.network.border_routers_heading }}</h2>
-  {% if not border_routers %}
-  <p class="text-sm text-gray-500">{{ t.network.empty_border_routers }}</p>
-  {% else %}
-  <div class="overflow-x-auto">
-    <table class="w-full text-sm">
-      <thead>
-        <tr class="text-left text-xs text-gray-500 border-b">
-          <th class="py-1 pr-3">{{ t.network.col_device }}</th>
-          <th class="py-1 pr-3">{{ t.network.col_network }}</th>
-          <th class="py-1 pr-3">{{ t.network.col_thread_version }}</th>
-          <th class="py-1">{{ t.network.col_address }}</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for b in border_routers %}
-        <tr class="border-b border-gray-100">
-          <td class="py-1 pr-3">{{ b.instance }}{% if b.vendor or b.model %} <span class="text-gray-400">({{ [b.vendor, b.model] | select | join(' ') }})</span>{% endif %}</td>
-          <td class="py-1 pr-3 text-gray-600">{{ b.network_name or '' }}</td>
-          <td class="py-1 pr-3 text-gray-600">{{ b.thread_version or '' }}</td>
-          <td class="py-1 font-mono text-xs text-gray-500">{{ b.host_name or (b.addresses | first) or '' }}</td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
-  </div>
-  {% endif %}
-</section>
-
-<section class="bg-white rounded shadow p-4 mb-6">
-  <h2 class="text-lg font-semibold mb-2">{{ t.network.commissionable_heading }}</h2>
-  {% if not commissionable %}
-  <p class="text-sm text-gray-500">{{ t.network.empty_commissionable }}</p>
-  {% else %}
-  <div class="overflow-x-auto">
-    <table class="w-full text-sm">
-      <thead>
-        <tr class="text-left text-xs text-gray-500 border-b">
-          <th class="py-1 pr-3">{{ t.network.col_device }}</th>
-          <th class="py-1 pr-3">{{ t.network.col_vid_pid }}</th>
-          <th class="py-1 pr-3">{{ t.network.col_discriminator }}</th>
-          <th class="py-1">{{ t.network.col_mode }}</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for d in commissionable %}
-        <tr class="border-b border-gray-100">
-          <td class="py-1 pr-3">{{ d.device_name or d.instance }}</td>
-          <td class="py-1 pr-3 font-mono text-xs text-gray-600">{{ d.vid_pid }}</td>
-          <td class="py-1 pr-3 font-mono text-xs text-gray-600">{{ d.discriminator }}</td>
-          <td class="py-1 text-gray-600">{{ d.mode }}</td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
-  </div>
-  {% endif %}
-</section>
-
+{% if active_view == 'mesh' %}
+<script src="{{ url('/static/network_geometry.js') }}?v=1" defer></script>
+<script src="{{ url('/static/network_graph.js') }}?v=7" defer></script>
+{% endif %}
 {% endblock %}

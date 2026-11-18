@@ -15,7 +15,9 @@ persisted address source:
   - ``MatterNodeRecord`` IPv6 + MAC, joined to a Device via
     ``DeviceFabricMembership.node_id``
   - ``DeviceIntegrationData`` payloads carrying top-level ``mac_address`` /
-    ``ipv4_addresses`` / ``ipv6_addresses`` (mDNS persists these, B.12)
+    ``thread_ext_address`` / ``ipv4_addresses`` / ``ipv6_addresses`` (mDNS
+    persists the addresses; the OTBR "locate" action persists the Thread
+    extended address)
 
 Addresses that map to more than one Device are marked *ambiguous* and never
 produce a match - correctness over recall.  Match priority is MAC (a globally
@@ -126,7 +128,12 @@ class AddressIndex:
                 pass
 
         # 3. Integration-data payloads with persisted addresses (mDNS, B.12).
+        # Rows left behind by a deleted Device are skipped: their addresses would
+        # otherwise look shared by two devices and block every match.
+        live_ids = set(session.exec(select(Device.id)).all())
         for row in session.exec(select(DeviceIntegrationData)).all():
+            if row.device_id not in live_ids:
+                continue
             try:
                 payload = json.loads(row.payload_json)
             except (ValueError, TypeError):
@@ -134,6 +141,7 @@ class AddressIndex:
             if not isinstance(payload, dict):
                 continue
             self._add_mac(payload.get("mac_address"), row.device_id)
+            self._add_mac(payload.get("thread_ext_address"), row.device_id)
             for ip in payload.get("ipv4_addresses") or []:
                 self._add_ip(ip, row.device_id)
             for ip in payload.get("ipv6_addresses") or []:
@@ -189,3 +197,72 @@ class AddressIndex:
             if norm and self._by_ip.get(norm) is _AMBIGUOUS:
                 return True
         return False
+
+
+def device_ipv6_addresses(session: Session, device_id: str) -> list[str]:
+    """Every persisted IPv6 address of one Device, canonicalized, in stable order.
+
+    Same sources as :class:`AddressIndex` (integration-data payloads and the
+    Matter node record joined through fabric membership), but for a single
+    Device and without the cross-device ambiguity filter.
+    """
+    from sqlmodel import select
+
+    from ..models import DeviceFabricMembership, DeviceIntegrationData, MatterNodeRecord
+
+    found: dict[str, None] = {}
+
+    def _take(ip: object) -> None:
+        norm = normalize_ip(ip) if isinstance(ip, str) else None
+        if norm:
+            found.setdefault(norm)
+
+    for row in session.exec(
+        select(DeviceIntegrationData).where(DeviceIntegrationData.device_id == device_id)  # type: ignore[arg-type]
+    ).all():
+        try:
+            payload = json.loads(row.payload_json)
+        except (ValueError, TypeError):
+            continue
+        if isinstance(payload, dict):
+            for ip in payload.get("ipv6_addresses") or []:
+                _take(ip)
+
+    node_ids = [
+        mem.node_id
+        for mem in session.exec(
+            select(DeviceFabricMembership).where(DeviceFabricMembership.device_id == device_id)  # type: ignore[arg-type]
+        ).all()
+    ]
+    for node_id in node_ids:
+        for rec in session.exec(
+            select(MatterNodeRecord).where(MatterNodeRecord.node_id == node_id)  # type: ignore[arg-type]
+        ).all():
+            try:
+                for ip in json.loads(rec.ip_addresses_json or "[]"):
+                    _take(ip)
+            except (ValueError, TypeError):
+                pass
+    return [ip for ip in found if ipaddress.ip_address(ip).version == 6]
+
+
+def homekit_accessory_id_free(session: Session, accessory_id: str, device_id: str) -> bool:
+    """True when no *other* Device already stores *accessory_id*.
+
+    The id is the shared HomeKit identity key, so a sync that learns a new id
+    for a Device (the accessory was re-paired and its HAP Device ID changed)
+    only adopts it when that cannot make two Devices claim the same accessory.
+    """
+    from sqlmodel import select
+
+    from ..models import Device
+
+    return (
+        session.exec(
+            select(Device.id).where(
+                Device.homekit_accessory_id == accessory_id,  # type: ignore[arg-type]
+                Device.id != device_id,  # type: ignore[arg-type]
+            )
+        ).first()
+        is None
+    )

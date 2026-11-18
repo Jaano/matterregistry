@@ -161,6 +161,15 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         if result.returncode != 0:
             sys.exit(f"Migration failed:\n{result.stderr}")
 
+        # Project an already-saved graph even when the Matter Server is offline.
+        # This reads only local SQLite data and must not block core startup.
+        try:
+            from .integrations.matter_server.server_client import project_saved_infrastructure
+
+            project_saved_infrastructure()
+        except Exception:
+            logger.exception("Saved topology infrastructure projection failed")
+
         matter_client = await _maybe_start_matter_client(settings)
         otbr_client = await _maybe_start_otbr_client(settings)
         ha_client = await _maybe_start_ha_client(settings)

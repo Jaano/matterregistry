@@ -1,41 +1,31 @@
 {% extends "base.html" %}
 {% block title %}{{ t.settings.tab_integrations }} - {{ t.nav.brand }}{% endblock %}
 {% block content %}
-<h1 class="text-2xl font-bold mb-2">{{ t.settings.title }}</h1>
-<nav class="mb-6 flex gap-4 border-b border-gray-200 pb-2 text-sm">
+<div class="mr-settings">
+<nav class="mr-settings-tabs" aria-label="{{ t.settings.title }}">
   <a href="{{ url('/settings') }}" class="text-gray-500 hover:text-gray-800 pb-1">{{ t.settings.tab_general }}</a>
   <span class="font-semibold text-blue-600 border-b-2 border-blue-600 pb-1">{{ t.settings.tab_integrations }}</span>
 </nav>
-<h2 class="text-xl font-semibold mb-2">{{ t.settings.integrations.title }}</h2>
+<div class="mr-integration-intro">
+  <h2>{{ t.settings.integrations.heading }}</h2>
+  <p>{{ t.settings.integrations.description }}</p>
+</div>
+
 
 {# ── shared macros ── #}
 {% macro cap_badges(caps) %}
 {% if caps %}
-  <div class="mt-3">
-    <span class="text-xs text-gray-400 uppercase">{{ t.settings.integrations.cap_heading }}</span>
-    <div class="flex flex-wrap gap-1 mt-1">
-      {% if caps.can_create_devices %}
-      <span class="bg-blue-50 text-blue-700 px-1.5 py-0.5 rounded text-xs">{{ t.settings.integrations.cap_creates }}</span>
-      {% endif %}
-      {% if caps.can_update_devices %}
-      <span class="bg-indigo-50 text-indigo-700 px-1.5 py-0.5 rounded text-xs">{{ t.settings.integrations.cap_updates }}</span>
-      {% endif %}
-      {% if caps.can_update_status %}
-      <span class="bg-purple-50 text-purple-700 px-1.5 py-0.5 rounded text-xs">{{ t.settings.integrations.cap_status }}</span>
-      {% endif %}
-      {% if caps.can_act_externally %}
-      <span class="bg-orange-50 text-orange-700 px-1.5 py-0.5 rounded text-xs">{{ t.settings.integrations.cap_external }}</span>
-      {% endif %}
-      {% if not (caps.can_create_devices or caps.can_update_devices or caps.can_update_status or caps.can_act_externally) %}
-      <span class="text-xs text-gray-400">{{ t.settings.integrations.cap_readonly }}</span>
-      {% endif %}
-    </div>
-    {% if caps.supported_protocols %}
-    <div class="mt-1">
-      <span class="text-xs text-gray-400">{{ t.settings.integrations.protocols_label }}</span>
-      <span class="text-xs font-mono text-gray-600">{{ caps.supported_protocols | join(', ') }}</span>
-    </div>
-    {% endif %}
+  <div class="mr-integration-capabilities">
+    {% for protocol in caps.supported_protocols %}
+    <span class="mr-protocol-pill">{{ 'HomeKit' if protocol == 'homekit' else protocol | title }}</span>
+    {% endfor %}
+    <span class="mr-integration-capability-list">
+      {% if caps.can_create_devices %}<span>{{ t.settings.integrations.cap_creates }}</span>{% endif %}
+      {% if caps.can_update_devices %}<span>{{ t.settings.integrations.cap_updates }}</span>{% endif %}
+      {% if caps.can_update_status %}<span>{{ t.settings.integrations.cap_status }}</span>{% endif %}
+      {% if caps.can_act_externally %}<span>{{ t.settings.integrations.cap_external }}</span>{% endif %}
+      {% if not (caps.can_create_devices or caps.can_update_devices or caps.can_update_status or caps.can_act_externally) %}<span>{{ t.settings.integrations.cap_readonly }}</span>{% endif %}
+    </span>
   </div>
 {% endif %}
 {% endmacro %}
@@ -54,10 +44,69 @@
 {% endif %}
 {% endmacro %}
 
+<!-- HA Core card -->
+<div class="mr-integration-card">
+  <div class="mr-integration-head">
+    <span class="mr-integration-icon mr-integration-icon-ha"><span class="icon-home-assistant" role="img" aria-label="Home Assistant"></span></span>
+    <div class="mr-integration-title">
+    <div class="mr-integration-title-line"><h2>{{ ha_long_name }} Core</h2>
+    <span class="
+      text-xs font-medium px-2 py-0.5 rounded-full
+      {% if ha_status == 'connected' %}bg-green-100 text-green-700
+      {% elif ha_status == 'connecting' %}bg-yellow-100 text-yellow-700
+      {% elif ha_status == 'unconfigured' %}bg-gray-100 text-gray-500
+      {% else %}bg-red-100 text-red-700{% endif %}">
+      {{ t.settings.integrations.status[ha_status] or ha_status }}
+    </span></div>
+    <p class="mr-integration-summary">{{ t.settings.integrations.supervisor_short if ha_using_supervisor else (ha_url or t.settings.integrations.no_url) }}</p>
+    </div>
+  </div>
+
+  {% if ha_error %}
+  <div class="mb-4 bg-red-50 border border-red-200 text-red-800 rounded px-4 py-2 text-sm font-mono">
+    {{ ha_error }}
+  </div>
+  {% endif %}
+
+  <div class="mr-integration-body">
+    {% if ha_using_supervisor %}
+    <div class="rounded bg-blue-50 border border-blue-200 px-4 py-2 text-sm text-blue-800">
+      {{ t.settings.integrations.supervisor_note }}
+    </div>
+    {% endif %}
+    {% if ha_using_supervisor %}<div class="mr-integration-config">
+      <span class="text-xs text-gray-400 uppercase">URL</span>
+      <p class="text-sm text-gray-700 font-mono">{{ ha_url or '-' }}</p>
+    </div>{% endif %}
+    {% if not ha_using_supervisor and ha_token_hint %}
+    <div class="mr-integration-config">
+      <span class="text-xs text-gray-400 uppercase">{{ t.settings.integrations.ha_token_label }}</span>
+      <p class="text-sm text-gray-700 font-mono">{{ ha_token_hint }}</p>
+    </div>
+    {% endif %}
+    {{ cap_badges(ha_capabilities) }}
+    {{ last_sync_row(ha_last_sync, ha_last_synced_at) }}
+    <div class="mr-integration-actions">
+      <button type="button" onclick="runHaSync()"
+              id="ha-sync-btn"
+              {% if ha_status == 'unconfigured' %}disabled{% endif %}
+              data-label-sync="{{ t.settings.integrations.sync_now }}"
+              data-label-syncing="{{ t.settings.integrations.syncing }}"
+              class="border border-gray-300 text-gray-700 px-4 py-2 rounded text-sm hover:bg-gray-50 disabled:opacity-50">
+        {{ t.settings.integrations.sync_now }}
+      </button>
+    </div>
+  </div>
+
+  <div id="ha-sync-result" class="mt-3 hidden text-sm text-gray-700"></div>
+</div>
+
 <!-- Matter Server card -->
-<div class="bg-white rounded shadow p-5 mb-6">
-  <div class="flex items-center justify-between mb-4">
-    <h2 class="text-sm font-semibold text-gray-500 uppercase">{{ ms_long_name }}</h2>
+<div class="mr-integration-card">
+  <div class="mr-integration-head">
+    <span class="mr-integration-icon"><span class="icon-protocol-matter" role="img" aria-label="Matter"></span></span>
+    <div class="mr-integration-title">
+    <div class="mr-integration-title-line"><h2>HA {{ ms_long_name }}</h2>
     <span id="ms-status-badge" class="
       text-xs font-medium px-2 py-0.5 rounded-full
       {% if ms_status == 'connected' %}bg-green-100 text-green-700
@@ -65,7 +114,9 @@
       {% elif ms_status == 'unconfigured' %}bg-gray-100 text-gray-500
       {% else %}bg-red-100 text-red-700{% endif %}">
       {{ t.settings.integrations.status[ms_status] or ms_status }}
-    </span>
+    </span></div>
+    <p class="mr-integration-summary">{{ ms_url or t.settings.integrations.no_url }}</p>
+    </div>
   </div>
 
   {% if ms_error %}
@@ -74,16 +125,13 @@
   </div>
   {% endif %}
 
-  <div class="space-y-3">
-    <div>
-      <span class="text-xs text-gray-400 uppercase">{{ t.settings.integrations.ws_url_label }}</span>
-      <p class="text-sm text-gray-700 font-mono">{{ ms_url or '-' }}</p>
-    </div>
+  <div class="mr-integration-body">
     {{ cap_badges(ms_capabilities) }}
     {{ last_sync_row(ms_last_sync, ms_last_synced_at) }}
-    <div class="flex gap-3 mt-3">
+    <div class="mr-integration-actions">
       <button type="button" onclick="runImport()"
               id="import-btn"
+              {% if ms_status == 'unconfigured' %}disabled{% endif %}
               data-label-sync="{{ t.settings.integrations.sync_now }}"
               data-label-syncing="{{ t.settings.integrations.syncing }}"
               class="border border-gray-300 text-gray-700 px-4 py-2 rounded text-sm hover:bg-gray-50 disabled:opacity-50">
@@ -99,9 +147,11 @@
 </div>
 
 <!-- OTBR card -->
-<div class="bg-white rounded shadow p-5 mb-6">
-  <div class="flex items-center justify-between mb-4">
-    <h2 class="text-sm font-semibold text-gray-500 uppercase">{{ otbr_long_name }}</h2>
+<div class="mr-integration-card">
+  <div class="mr-integration-head">
+    <span class="mr-integration-icon"><span class="icon-thread" role="img" aria-label="Thread"></span></span>
+    <div class="mr-integration-title">
+    <div class="mr-integration-title-line"><h2>{{ otbr_long_name }}</h2>
     <span id="otbr-status-badge" class="
       text-xs font-medium px-2 py-0.5 rounded-full
       {% if otbr_status == 'connected' %}bg-green-100 text-green-700
@@ -109,7 +159,9 @@
       {% elif otbr_status == 'unconfigured' %}bg-gray-100 text-gray-500
       {% else %}bg-red-100 text-red-700{% endif %}">
       {{ t.settings.integrations.status[otbr_status] or otbr_status }}
-    </span>
+    </span></div>
+    <p class="mr-integration-summary">{{ otbr_url or t.settings.integrations.no_url }}</p>
+    </div>
   </div>
 
   {% if otbr_error %}
@@ -118,11 +170,7 @@
   </div>
   {% endif %}
 
-  <div class="space-y-3">
-    <div>
-      <span class="text-xs text-gray-400 uppercase">{{ t.settings.integrations.rest_url_label }}</span>
-      <p class="text-sm text-gray-700 font-mono">{{ otbr_url or '-' }}</p>
-    </div>
+  <div class="mr-integration-body">
     {{ cap_badges(otbr_capabilities) }}
     {{ last_sync_row(otbr_last_sync, otbr_last_synced_at) }}
 
@@ -177,9 +225,21 @@
     </div>
     {% endfor %}
 
-    <div class="flex gap-3 mt-3">
+    <label class="mt-3 flex items-start gap-2 text-sm text-gray-700" for="otbr-auto-locate">
+      <input type="checkbox" id="otbr-auto-locate" name="enabled" value="1" class="mt-1"
+             {% if otbr_auto_locate %}checked{% endif %}
+             hx-post="{{ url('/settings/integrations/otbr/auto-locate') }}"
+             hx-trigger="change" hx-include="this" hx-swap="none">
+      <span>
+        <span class="font-medium">{{ t.settings.integrations.auto_locate }}</span>
+        <span class="block text-xs text-gray-500">{{ t.settings.integrations.auto_locate_hint }}</span>
+      </span>
+    </label>
+
+    <div class="mr-integration-actions">
       <button type="button" onclick="runOtbrPoll()"
               id="otbr-poll-btn"
+              {% if otbr_status == 'unconfigured' %}disabled{% endif %}
               data-label-sync="{{ t.settings.integrations.sync_now }}"
               data-label-syncing="{{ t.settings.integrations.syncing }}"
               class="border border-gray-300 text-gray-700 px-4 py-2 rounded text-sm hover:bg-gray-50 disabled:opacity-50">
@@ -194,70 +254,21 @@
   </div>
 </div>
 
-<!-- HA Core card -->
-<div class="bg-white rounded shadow p-5 mb-6">
-  <div class="flex items-center justify-between mb-4">
-    <h2 class="text-sm font-semibold text-gray-500 uppercase">{{ ha_long_name }}</h2>
-    <span class="
-      text-xs font-medium px-2 py-0.5 rounded-full
-      {% if ha_status == 'connected' %}bg-green-100 text-green-700
-      {% elif ha_status == 'connecting' %}bg-yellow-100 text-yellow-700
-      {% elif ha_status == 'unconfigured' %}bg-gray-100 text-gray-500
-      {% else %}bg-red-100 text-red-700{% endif %}">
-      {{ t.settings.integrations.status[ha_status] or ha_status }}
-    </span>
-  </div>
-
-  {% if ha_error %}
-  <div class="mb-4 bg-red-50 border border-red-200 text-red-800 rounded px-4 py-2 text-sm font-mono">
-    {{ ha_error }}
-  </div>
-  {% endif %}
-
-  <div class="space-y-3">
-    {% if ha_using_supervisor %}
-    <div class="rounded bg-blue-50 border border-blue-200 px-4 py-2 text-sm text-blue-800">
-      {{ t.settings.integrations.supervisor_note }}
-    </div>
-    {% endif %}
-    <div>
-      <span class="text-xs text-gray-400 uppercase">URL</span>
-      <p class="text-sm text-gray-700 font-mono">{{ ha_url or '-' }}</p>
-    </div>
-    {% if not ha_using_supervisor %}
-    <div>
-      <span class="text-xs text-gray-400 uppercase">{{ t.settings.integrations.ha_token_label }}</span>
-      <p class="text-sm text-gray-700 font-mono">{{ ha_token_hint or '-' }}</p>
-    </div>
-    {% endif %}
-    {{ cap_badges(ha_capabilities) }}
-    {{ last_sync_row(ha_last_sync, ha_last_synced_at) }}
-    <div class="flex gap-3 mt-3">
-      <button type="button" onclick="runHaSync()"
-              id="ha-sync-btn"
-              {% if ha_status == 'unconfigured' %}disabled{% endif %}
-              data-label-sync="{{ t.settings.integrations.sync_now }}"
-              data-label-syncing="{{ t.settings.integrations.syncing }}"
-              class="border border-gray-300 text-gray-700 px-4 py-2 rounded text-sm hover:bg-gray-50 disabled:opacity-50">
-        {{ t.settings.integrations.sync_now }}
-      </button>
-    </div>
-  </div>
-
-  <div id="ha-sync-result" class="mt-3 hidden text-sm text-gray-700"></div>
-</div>
-
 <!-- mDNS Discovery card -->
-<div class="bg-white rounded shadow p-5 mb-6">
-  <div class="flex items-center justify-between mb-4">
-    <h2 class="text-sm font-semibold text-gray-500 uppercase">{{ mdns_long_name }}</h2>
+<div class="mr-integration-card">
+  <div class="mr-integration-head">
+    <span class="mr-integration-icon"><span class="icon-mdns" role="img" aria-label="mDNS"></span></span>
+    <div class="mr-integration-title">
+    <div class="mr-integration-title-line"><h2>{{ mdns_long_name }}</h2>
     <span class="
       text-xs font-medium px-2 py-0.5 rounded-full
       {% if mdns_status == 'browsing' %}bg-green-100 text-green-700
       {% elif mdns_status == 'unconfigured' or mdns_status == 'disabled' %}bg-gray-100 text-gray-500
       {% else %}bg-red-100 text-red-700{% endif %}">
       {{ t.settings.integrations.status[mdns_status] or mdns_status }}
-    </span>
+    </span></div>
+    <p class="mr-integration-summary">{{ t.settings.integrations.mdns_unconfigured if mdns_status == 'unconfigured' else (mdns_discovered_count ~ ' ' ~ t.settings.integrations.mdns_discovered) }}</p>
+    </div>
   </div>
 
   {% if mdns_error %}
@@ -266,7 +277,7 @@
   </div>
   {% endif %}
 
-  <div class="space-y-3">
+  <div class="mr-integration-body">
     {% if mdns_status == 'unconfigured' %}
     <div class="rounded bg-gray-50 border border-gray-200 px-4 py-2 text-sm text-gray-600">
       {{ t.settings.integrations.mdns_disabled_note
@@ -274,18 +285,13 @@
          | replace('{option}', '<span class="font-mono">mdns_enabled</span>')
          | safe }}
     </div>
-    {% else %}
-    <div>
-      <span class="text-xs text-gray-400 uppercase">{{ t.settings.integrations.mdns_discovered_label }}</span>
-      <p class="text-sm text-gray-700"><strong>{{ mdns_discovered_count }}</strong> {{ t.settings.integrations.mdns_discovered }}</p>
-    </div>
     {% endif %}
     {{ cap_badges(mdns_capabilities) }}
     {{ last_sync_row(mdns_last_sync, mdns_last_synced_at) }}
-    <div class="flex gap-3 mt-3">
+    <div class="mr-integration-actions">
       <button type="button" onclick="runMdnsSync()"
               id="mdns-sync-btn"
-              {% if mdns_status == 'unconfigured' %}disabled{% endif %}
+              {% if mdns_status in ['unconfigured', 'disabled'] %}disabled{% endif %}
               data-label-sync="{{ t.settings.integrations.sync_now }}"
               data-label-syncing="{{ t.settings.integrations.syncing }}"
               class="border border-gray-300 text-gray-700 px-4 py-2 rounded text-sm hover:bg-gray-50 disabled:opacity-50">
@@ -297,6 +303,7 @@
   <div id="mdns-sync-result" class="mt-3 hidden text-sm text-gray-700"></div>
 </div>
 
+</div>
 <script>
 const baseUrl = "{{ url('/api/integrations') }}";
 

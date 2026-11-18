@@ -5,6 +5,15 @@ nav:
   settings: "设置"
   network: "网络"
 
+quick_search:
+  title: "快速搜索"
+  close: "关闭搜索"
+  hint: "使用方向键选择，按 Enter 打开，按 Esc 关闭。"
+  devices: "设备"
+  products: "产品"
+  pages: "页面"
+  no_results: "没有匹配的设备或产品。"
+
 index:
   tagline: "用于保存 Matter 设备配对信息的带外注册表。"
 
@@ -13,7 +22,7 @@ device:
     title: "设备"
     new_btn: "+ 新建设备"
     sync_all_aria: "同步所有集成"
-    search_label: "搜索"
+    filter_label: "筛选"
     search_placeholder: "名称、厂商、房间、备注…"
     status_label: "状态"
     vendor_label: "厂商"
@@ -25,7 +34,6 @@ device:
     status_retired: "已停用"
     status_spare: "备用"
     status_hidden: "已隐藏"
-    clear_filters: "全部清除"
     col_name: "名称"
     col_vendor: "厂商"
     col_product: "产品"
@@ -35,10 +43,17 @@ device:
     empty: "暂无设备。"
     empty_add: "添加第一个设备 →"
     filtered_empty: "没有设备符合当前筛选条件。"
-    clear_all_filters: "清除所有筛选条件"
     matching: "符合筛选条件"
     print_qr_sheet_btn: "打印 QR 贴纸页"
     print_qr_sheet_title: "为每个已保存代码的设备打印 QR 贴纸，包括已隐藏的设备"
+
+    protocol_label: "协议"
+    all_protocols: "所有协议"
+    view_label: "视图"
+    table_view: "表格"
+    card_view: "卡片"
+    count_label: "设备"
+    count_one: "设备"
 
   form:
     new_title: "新建设备"
@@ -62,6 +77,12 @@ device:
     transport_label: "传输方式"
     warranty_label: "保修到期"
     notes_label: "备注（Markdown）"
+
+    new_intro: "先输入名称，其余信息可在设备页面添加。"
+    basics_heading: "设备基本信息"
+    basics_desc: "只需填写名称。"
+    product_none: "稍后选择产品"
+    product_search: "搜索产品目录"
 
   detail:
     scan_btn: "扫描 / 添加代码"
@@ -239,6 +260,7 @@ scan_block:
 
 settings:
   title: "设置"
+  subtitle: "查看应用偏好设置和可选的信息补充来源。"
   tab_general: "常规"
   tab_integrations: "集成"
   import_success: "导入完成 -"
@@ -307,6 +329,11 @@ settings:
 
   integrations:
     title: "集成"
+    heading: "外部集成"
+    description: "已配置的来源会补充注册记录。同步仅从上游缓存读取数据。"
+    no_url: "未配置 URL"
+    supervisor_short: "正在使用 Supervisor 令牌"
+    mdns_unconfigured: "发现功能已禁用"
     cap_heading: "功能"
     cap_creates: "创建设备"
     cap_updates: "更新设备"
@@ -345,6 +372,8 @@ settings:
     sync_error: "错误"
     sync_done: "完成 - 已创建 <strong>{created}</strong>，已更新 <strong>{updated}</strong>，未更改 <strong>{unchanged}</strong>。"
     sync_done_otbr: "完成 - 网络 <strong>{network}</strong> 已保存。"
+    auto_locate: "自动识别未知的 Thread 设备"
+    auto_locate_hint: "当网络中出现注册表无法命名的 Thread 设备时，逐个查询路由器以找出它是哪台设备。会向 Thread 网络发送少量只读诊断请求。"
     status:
       connected: "已连接"
       connecting: "连接中"
@@ -357,13 +386,12 @@ product:
   list:
     title: "产品"
     new_btn: "+ 新建产品"
-    search_label: "搜索"
+    filter_label: "筛选"
     search_placeholder: "名称、厂商、型号、VID/PID、描述…"
     protocol_label: "协议"
     vendor_label: "厂商"
     all_protocols: "所有协议"
     all_vendors: "所有厂商"
-    clear_filters: "清除全部"
     col_thumb: "图标"
     col_product: "产品"
     col_vendor: "厂商"
@@ -374,8 +402,11 @@ product:
     empty: "暂无产品。"
     empty_add: "创建产品 →"
     filtered_empty: "没有产品符合当前筛选条件。"
-    clear_all_filters: "清除所有筛选条件"
     matching: "项符合筛选条件"
+
+    view_label: "产品视图"
+    table_view: "表格"
+    card_view: "卡片"
 
   form:
     new_title: "新建产品"
@@ -476,6 +507,12 @@ modal:
   delete: "删除"
 
 network:
+  thread_link_legend: "Thread 链路"
+  weak_thread_link_legend: "较弱的 Thread 链路"
+  wifi_link_legend: "Wi-Fi 链路"
+  diagram_desc: "已保存的连接按房间分组。"
+  unassigned_room: "未分配"
+  empty_nodes: "已保存的拓扑中没有节点。"
   title: "网络"
   topology_heading: "拓扑"
   empty_topology: "暂无拓扑。若 Matter 服务器支持，同步后会显示。"
@@ -486,19 +523,25 @@ network:
   col_network: "网络"
   col_address: "地址"
   connections_heading: "链路"
+  mesh_view: "网状图"
+  empty_links: "已保存的拓扑中没有连接。"
   col_from: "来源"
   col_to: "目标"
   col_strength: "强度"
-  col_signal: "信号"
+  col_link_quality: "链路质量"
+  col_rssi: "RSSI"
   border_routers_heading: "Thread 边界路由器 (mDNS)"
   empty_border_routers: "未发现。需要启用 mDNS 发现。"
   col_device: "设备"
   col_thread_version: "Thread"
   commissionable_heading: "可配网 (mDNS)"
+  discoverable_heading: "可发现，尚未准备配网 (mDNS)"
   empty_commissionable: "没有 Matter 设备在广播可配网状态。"
   col_vid_pid: "VID / PID"
   col_discriminator: "判别码"
   col_mode: "模式"
+  mode_basic: "基本"
+  mode_enhanced: "增强"
 
 dcl:
   lookup_btn: "在 CSA DCL 中查询"

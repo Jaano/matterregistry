@@ -7,7 +7,8 @@ Browses `_hap._tcp.local.`, `_hap._udp.local.` (HomeKit),
 (event-driven, like the Matter Server client).
 
 Also browses `_meshcop._udp.local.` (Thread Border Agents) and
-`_matterc._udp.local.` (Matter devices open for commissioning). Those two
+`_matterc._udp.local.` (Matter commissioning discovery, including nodes
+visible without an open window). Those two
 are a passive, live-only inventory: nothing is persisted, projected, or sent.
 
 HAP projection: auto-creates / correlates ``homekit`` Device rows, deduped on
@@ -16,11 +17,11 @@ the HAP accessory id and linked to stored onboarding codes via the setup hash.
 LTPDU projection (D.5): enriches Matter / HomeKit devices with Thread firmware
 and network data.  Unmatched records create protocol-unlabeled Device rows
 (``protocol=None``, a first-class supported state).  LTPDU correlation order:
-  1. existing ``DeviceLink(integration="mdns", external_id=eui64)`` (idempotent)
-  2. ``id_is_hap`` and ``Device.homekit_accessory_id == id`` (NL45 HomeKit)
+  1. exact HomeKit accessory identity when ``id_is_hap`` (NL45 HomeKit)
+  2. unique EUI-64 owner from a saved mDNS link or integration snapshot
   3. ``thread_ext_addr`` colon-hex == ``Device.mac_address``, or mesh-local IPv6
      match against ``MatterNodeRecord.ip_addresses_json`` (NL67 Matter)
-  4. no match → create unlabeled Device keyed by ``eui64``
+  4. no match creates an unlabeled Device keyed by ``eui64``
 
 Matter operational projection (D.6): enriches existing Matter devices with
 operational networking (CASE port, IPv4/IPv6, session parameters).  Correlation
@@ -44,6 +45,7 @@ BLE-only accessories do not advertise mDNS and are never seen here.
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import re
 from enum import StrEnum
@@ -303,7 +305,7 @@ def parse_matterc_service(
     addresses: list[str],
     port: int | None,
 ) -> dict | None:
-    """Parse a ``_matterc._udp`` record: a Matter device open for commissioning.
+    """Parse a ``_matterc._udp`` commissioning discovery record.
 
     Returns None without a discriminator (``D``).
     """
@@ -351,6 +353,7 @@ def project_discovered(
     from ...audit import log as audit_log
     from ...models import Device, DeviceLink, DeviceLinkSource, Property, PropertyType
     from ...services import resolve_product, set_field
+    from ..correlate import homekit_accessory_id_free
     from ..data import read as read_integration_data
     from ..data import upsert as upsert_integration_data
 
@@ -446,7 +449,14 @@ def project_discovered(
 
         if not created_new:
             changed = False
-            if acc_id and not device.homekit_accessory_id:
+            # The advertised HAP Device ID is the live identity: refresh a stale
+            # stored value (the accessory was re-paired and got a new id), unless
+            # another Device already holds it.
+            if (
+                acc_id
+                and device.homekit_accessory_id != acc_id
+                and homekit_accessory_id_free(session, acc_id, device.id)
+            ):
                 device.homekit_accessory_id = acc_id
                 changed = True
             # Add-only transport enrichment (never removes; B.5 pattern).
@@ -552,18 +562,18 @@ def project_ltpdu(
     """Correlate LTPDU records to Device rows and enrich them (D.5, Algorithm 2).
 
     Correlation order (first match wins):
-      1. existing DeviceLink(integration="mdns", external_id=eui64) - idempotent
-      2. id_is_hap + Device.homekit_accessory_id == id  (NL45)
+      1. exact HomeKit accessory id, when present (NL45)
+      2. unique EUI-64 owner from an mdns link or saved LTPDU data
       3. network-address match (shared AddressIndex): thread_ext_addr against any
          device MAC, then mesh-local IPv6 against any device IP  (NL67)
-      4. no match → create unlabeled Device (protocol=None)
+      4. no match creates an unlabeled Device (protocol=None)
     """
     from datetime import UTC, datetime
 
     from sqlmodel import select
 
     from ...audit import log as audit_log
-    from ...models import Device, DeviceLink, DeviceLinkSource
+    from ...models import Device, DeviceIntegrationData, DeviceLink, DeviceLinkSource
     from ...services import resolve_product, set_field
     from ..correlate import AddressIndex
     from ..data import read as read_integration_data
@@ -576,16 +586,36 @@ def project_ltpdu(
     skipped = 0
     product_counts: dict[str, int] = {"created": 0, "updated": 0}
 
-    # Pre-load all mdns links.  eui64s are 16-char hex strings without colons,
-    # while HAP acc_ids are MAC-form (AA:BB:…).  We key only by eui64 here for
-    # idempotency step 1 - links with acc_id keys are ignored.
-    mdns_links_by_eui64: dict[str, DeviceLink] = {
-        lnk.external_id: lnk
-        for lnk in session.exec(
-            select(DeviceLink).where(DeviceLink.integration == "mdns")  # type: ignore[attr-defined]
-        ).all()
-        if _EUI64_RE.match(lnk.external_id)
-    }
+    mdns_links_by_eui64: dict[str, list[DeviceLink]] = {}
+    mdns_links_by_hap_id: dict[str, list[DeviceLink]] = {}
+    for existing_link in session.exec(
+        select(DeviceLink).where(DeviceLink.integration == "mdns")  # type: ignore[attr-defined]
+    ).all():
+        if _EUI64_RE.fullmatch(existing_link.external_id):
+            mdns_links_by_eui64.setdefault(existing_link.external_id.upper(), []).append(
+                existing_link
+            )
+        elif _HAP_ID_RE.fullmatch(existing_link.external_id):
+            mdns_links_by_hap_id.setdefault(existing_link.external_id, []).append(existing_link)
+
+    # A HAP-linked Device has room for only one mdns DeviceLink. Its LTPDU
+    # EUI-64 is still saved in integration data and must remain matchable when
+    # a later LTPDU advertisement omits the HAP id and network addresses.
+    cached_eui64_owners: dict[str, set[str]] = {}
+    for row in session.exec(
+        select(DeviceIntegrationData).where(
+            DeviceIntegrationData.integration == "mdns"  # type: ignore[attr-defined]
+        )
+    ).all():
+        try:
+            payload = json.loads(row.payload_json)
+        except (ValueError, TypeError):
+            continue
+        if not isinstance(payload, dict):
+            continue
+        cached_eui64 = payload.get("ltpdu_eui64")
+        if isinstance(cached_eui64, str) and _EUI64_RE.fullmatch(cached_eui64):
+            cached_eui64_owners.setdefault(cached_eui64.upper(), set()).add(row.device_id)
 
     # Shared MAC/IPv4/IPv6 index over every persisted address source (joins
     # Matter nodes to devices via DeviceFabricMembership - the real node link).
@@ -593,31 +623,65 @@ def project_ltpdu(
 
     for rec in ltpdu_records:
         eui64 = rec.get("eui64")
-        if not eui64:
+        if not isinstance(eui64, str) or not _EUI64_RE.fullmatch(eui64):
             skipped += 1
             continue
+        eui64 = eui64.upper()
 
         device: Device | None = None
         link: DeviceLink | None = None
 
-        # 1. Idempotency: existing mdns DeviceLink keyed by eui64.
-        link = mdns_links_by_eui64.get(eui64)
-        if link:
-            device = session.get(Device, link.device_id)
-            if device is None:
-                # Orphaned: the linked device was deleted since. Drop the
-                # stale link instead of silently keeping it dangling - the
-                # correlation below will create/find the right device and a
-                # fresh link for it.
-                session.delete(link)
-                del mdns_links_by_eui64[eui64]
-                link = None
+        owners = set(cached_eui64_owners.get(eui64, set()))
+        for candidate_link in mdns_links_by_eui64.get(eui64, []):
+            if session.get(Device, candidate_link.device_id) is None:
+                session.delete(candidate_link)
+            else:
+                owners.add(candidate_link.device_id)
+        owners = {device_id for device_id in owners if session.get(Device, device_id) is not None}
 
-        # 2. HomeKit: id_is_hap and Device.homekit_accessory_id matches.
-        if device is None and rec.get("id_is_hap") and rec.get("id"):
-            device = session.exec(
-                select(Device).where(Device.homekit_accessory_id == rec["id"])  # type: ignore[arg-type]
-            ).first()
+        # The HAP id is a stronger identity than an EUI-64 link left on a
+        # shell created while that id was temporarily absent.
+        if rec.get("id_is_hap") and rec.get("id"):
+            hap_id = rec["id"]
+            hap_owners = {
+                candidate.id
+                for candidate in session.exec(
+                    select(Device).where(Device.homekit_accessory_id == hap_id)  # type: ignore[arg-type]
+                ).all()
+            }
+            hap_owners.update(
+                candidate_link.device_id
+                for candidate_link in mdns_links_by_hap_id.get(hap_id, [])
+                if session.get(Device, candidate_link.device_id) is not None
+            )
+            if len(hap_owners) > 1:
+                logger.warning("LTPDU eui64=%s: ambiguous HomeKit id, skipping", eui64)
+                skipped += 1
+                continue
+            if hap_owners:
+                device = session.get(Device, next(iter(hap_owners)))
+                if owners - hap_owners:
+                    logger.warning(
+                        "LTPDU eui64=%s: HomeKit identity differs from saved EUI-64 owner",
+                        eui64,
+                    )
+
+        if device is None and len(owners) == 1:
+            device = session.get(Device, next(iter(owners)))
+        elif device is None and len(owners) > 1:
+            logger.warning("LTPDU eui64=%s: ambiguous saved owners, skipping", eui64)
+            skipped += 1
+            continue
+
+        if device is not None:
+            link = next(
+                (
+                    candidate_link
+                    for candidate_link in mdns_links_by_eui64.get(eui64, [])
+                    if candidate_link.device_id == device.id
+                ),
+                None,
+            )
 
         # 3. Network-address match: Thread ext addr as MAC, mesh-local as IPv6.
         if device is None:
@@ -746,6 +810,7 @@ def project_ltpdu(
                 "ltpdu_thread_ext_pan_id": rec.get("thread_ext_pan_id"),
             },
         )
+        cached_eui64_owners.setdefault(eui64, set()).add(device.id)
 
     integration.assert_capabilities(session, created=created)
     audit_log(session, action="mdns.ltpdu_sync", entity="mdns", reason="mdns.project_ltpdu")
@@ -867,7 +932,7 @@ class MdnsClient(Integration):
         self._ltpdu_discovered: dict[str, dict] = {}
         # Matter operational records keyed by (compressed_fabric_hex, node_id).
         self._matter_discovered: dict[tuple[str, int], dict] = {}
-        # Thread Border Agents and Matter devices open for commissioning, keyed by
+        # Thread Border Agents and Matter commissioning advertisements, keyed by
         # service instance name. Live view only: nothing is persisted or projected.
         self._meshcop_discovered: dict[str, dict] = {}
         self._matterc_discovered: dict[str, dict] = {}
@@ -1105,7 +1170,7 @@ class MdnsClient(Integration):
         )
 
     def commissionable_devices(self) -> list[dict]:
-        """Matter devices currently advertising that they are open for commissioning."""
+        """Matter commissioning advertisements, including extended discovery."""
         return sorted(self._matterc_discovered.values(), key=lambda r: r.get("instance") or "")
 
     async def ingest(self) -> None:

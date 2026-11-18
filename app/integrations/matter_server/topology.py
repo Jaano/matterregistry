@@ -2,7 +2,8 @@
 
 Pure functions over the graph dict the Matter Server returns from
 ``get_network_topology`` (nodes + connections). The graph is built by the server
-from its own attribute cache, so reading it never touches a device.
+from cached attributes and its Border Router discovery data. These helpers
+never request additional data.
 """
 
 from __future__ import annotations
@@ -11,6 +12,7 @@ from collections.abc import Callable
 from typing import Any
 
 from ...thread import thread_role_label
+from ..correlate import normalize_mac
 
 _STRENGTH_RANK = {"strong": 0, "medium": 1, "weak": 2, "unknown": 3, "none": 4}
 _ROLE_NAMES = {
@@ -23,6 +25,45 @@ _ROLE_NAMES = {
 }
 
 NameLookup = Callable[[int], str | None]
+
+INFRASTRUCTURE_LINK_INTEGRATIONS = {
+    "border_router": "topology_border_router",
+    "wifi_ap": "topology_wifi_ap",
+}
+
+
+def infrastructure_identity(node: dict[str, Any]) -> tuple[str, str] | None:
+    """Return a type-qualified link and normalized hardware address for a graph node.
+
+    Schema 13 graph IDs encode the address, even when older snapshots omit
+    ``bssid``. A display name or arbitrary graph ID is never an identity.
+    """
+    kind = node.get("kind")
+    if not isinstance(kind, str):
+        return None
+    integration = INFRASTRUCTURE_LINK_INTEGRATIONS.get(kind)
+    if integration is None:
+        return None
+    expected_hex_length = 16 if kind == "border_router" else 12
+    graph_prefix = "br_" if kind == "border_router" else "ap_"
+    graph_id = node.get("id")
+    candidates = (
+        [node.get("ext_address")]
+        if kind == "border_router"
+        else [
+            node.get("bssid"),
+            node.get("network_name"),
+        ]
+    )
+    if isinstance(graph_id, str) and graph_id.startswith(graph_prefix):
+        candidates.append(graph_id[len(graph_prefix) :])
+    for candidate in candidates:
+        if not isinstance(candidate, str):
+            continue
+        address = normalize_mac(candidate)
+        if address and len(address.replace(":", "")) == expected_hex_length:
+            return integration, address
+    return None
 
 
 def role_label(role: str | None) -> str | None:

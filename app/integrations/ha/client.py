@@ -361,6 +361,7 @@ class HACoreClient(PolledIntegration):
             Product,
         )
         from ...services import resolve_product, set_field
+        from ..correlate import homekit_accessory_id_free
         from ..data import upsert as upsert_integration_data
         from .correlate import _is_placeholder, auto_correlate
 
@@ -512,6 +513,7 @@ class HACoreClient(PolledIntegration):
                     existing_link = existing_links.get(hk_device.id)
                     if existing_link and existing_link.external_id != ha_id:
                         # Re-paired HomeKit accessory gets new HA device ID
+                        old_ha_id = existing_link.external_id
                         existing_link.external_id = ha_id
                         existing_link.linked_at = now
                         session.add(existing_link)
@@ -520,7 +522,7 @@ class HACoreClient(PolledIntegration):
                             session,
                             action="ha_core.link_repoint",
                             entity=f"device:{hk_device.id}",
-                            reason=f"old_ha_id:{existing_link.external_id}→new_ha_id:{ha_id}",
+                            reason=f"old_ha_id:{old_ha_id}->new_ha_id:{ha_id}",
                         )
 
                 # Create new HomeKit device
@@ -606,8 +608,17 @@ class HACoreClient(PolledIntegration):
                     if nt:
                         changed |= set_field(hk_device, "network_type", nt, FieldSource.ha)
                     # Backfill the shared HomeKit identity key (dedupe with mDNS, D.3).
-                    if accessory_id and not hk_device.homekit_accessory_id:
+                    # HA's identifier follows a re-pair; refresh a stale stored value
+                    # (unless another Device holds it) so the shared key keeps working.
+                    if (
+                        accessory_id
+                        and hk_device.homekit_accessory_id != accessory_id
+                        and homekit_accessory_id_free(session, accessory_id, hk_device.id)
+                    ):
+                        if hk_device.homekit_accessory_id:
+                            hk_by_accessory_id.pop(hk_device.homekit_accessory_id, None)
                         hk_device.homekit_accessory_id = accessory_id
+                        hk_by_accessory_id[accessory_id] = hk_device
                         changed = True
                     if changed:
                         hk_device.updated_at = now

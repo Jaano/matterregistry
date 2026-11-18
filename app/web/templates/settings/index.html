@@ -1,8 +1,8 @@
 {% extends "base.html" %}
 {% block title %}{{ t.settings.title }} - {{ t.nav.brand }}{% endblock %}
 {% block content %}
-<h1 class="text-2xl font-bold mb-2">{{ t.settings.title }}</h1>
-<nav class="mb-6 flex gap-4 border-b border-gray-200 pb-2 text-sm">
+<div class="mr-settings">
+<nav class="mr-settings-tabs" aria-label="{{ t.settings.title }}">
   <span class="font-semibold text-blue-600 border-b-2 border-blue-600 pb-1">{{ t.settings.tab_general }}</span>
   <a href="{{ url('/settings/integrations') }}" class="text-gray-500 hover:text-gray-800 pb-1">{{ t.settings.tab_integrations }}</a>
 </nav>
@@ -119,7 +119,7 @@
       <strong>{{ t.settings.backup.secret_warning }}</strong>
     </div>
     <a href="{{ url('/api/export') }}" download
-       class="inline-block bg-blue-600 text-white px-4 py-2 rounded text-sm hover:bg-blue-700">
+       class="mr-control bg-blue-600 text-white px-4 py-2 rounded text-sm hover:bg-blue-700">
       {{ t.settings.backup.download_btn }}
     </a>
   </div>
@@ -196,4 +196,5 @@
   });
 })();
 </script>
+</div>
 {% endblock %}

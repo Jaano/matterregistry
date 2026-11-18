@@ -5,6 +5,15 @@ nav:
   settings: "सेटिंग्स"
   network: "नेटवर्क"
 
+quick_search:
+  title: "त्वरित खोज"
+  close: "खोज बंद करें"
+  hint: "चुनने के लिए तीर कुंजियों का उपयोग करें। खोलने के लिए Enter और बंद करने के लिए Esc दबाएँ।"
+  devices: "डिवाइस"
+  products: "उत्पाद"
+  pages: "पृष्ठ"
+  no_results: "कोई मेल खाता डिवाइस या उत्पाद नहीं मिला।"
+
 index:
   tagline: "Matter डिवाइस की पेयरिंग जानकारी के लिए आउट-ऑफ़-बैंड रजिस्ट्री।"
 
@@ -13,7 +22,7 @@ device:
     title: "डिवाइस"
     new_btn: "+ नया डिवाइस"
     sync_all_aria: "सभी इंटीग्रेशन सिंक करें"
-    search_label: "खोजें"
+    filter_label: "फ़िल्टर"
     search_placeholder: "नाम, निर्माता, कमरा, नोट्स…"
     status_label: "स्थिति"
     vendor_label: "निर्माता"
@@ -25,7 +34,6 @@ device:
     status_retired: "सेवानिवृत्त"
     status_spare: "अतिरिक्त"
     status_hidden: "छिपा हुआ"
-    clear_filters: "सभी हटाएँ"
     col_name: "नाम"
     col_vendor: "निर्माता"
     col_product: "उत्पाद"
@@ -35,10 +43,17 @@ device:
     empty: "अभी तक कोई डिवाइस नहीं।"
     empty_add: "अपना पहला डिवाइस जोड़ें →"
     filtered_empty: "कोई भी डिवाइस मौजूदा फ़िल्टर से मेल नहीं खाता।"
-    clear_all_filters: "सभी फ़िल्टर हटाएँ"
     matching: "फ़िल्टर से मेल खाते"
     print_qr_sheet_btn: "QR शीट प्रिंट करें"
     print_qr_sheet_title: "छिपे हुए सहित, संग्रहीत कोड वाले प्रत्येक डिवाइस के लिए QR स्टिकर प्रिंट करें"
+
+    protocol_label: "प्रोटोकॉल"
+    all_protocols: "सभी प्रोटोकॉल"
+    view_label: "दृश्य"
+    table_view: "तालिका"
+    card_view: "कार्ड"
+    count_label: "डिवाइस"
+    count_one: "डिवाइस"
 
   form:
     new_title: "नया डिवाइस"
@@ -62,6 +77,12 @@ device:
     transport_label: "ट्रांसपोर्ट"
     warranty_label: "वारंटी समाप्ति"
     notes_label: "नोट्स (markdown)"
+
+    new_intro: "नाम से शुरू करें। बाकी जानकारी डिवाइस के पृष्ठ पर जोड़ें।"
+    basics_heading: "डिवाइस की मूल जानकारी"
+    basics_desc: "केवल नाम आवश्यक है।"
+    product_none: "उत्पाद बाद में चुनें"
+    product_search: "उत्पाद सूची में खोजें"
 
   detail:
     scan_btn: "स्कैन / कोड जोड़ें"
@@ -239,6 +260,7 @@ scan_block:
 
 settings:
   title: "सेटिंग्स"
+  subtitle: "ऐप की प्राथमिकताएँ और वैकल्पिक जानकारी स्रोत देखें।"
   tab_general: "सामान्य"
   tab_integrations: "इंटीग्रेशन"
   import_success: "आयात पूर्ण -"
@@ -307,6 +329,11 @@ settings:
 
   integrations:
     title: "इंटीग्रेशन"
+    heading: "बाहरी एकीकरण"
+    description: "कॉन्फ़िगर किए गए स्रोत रजिस्ट्री रिकॉर्ड में जानकारी जोड़ते हैं। सिंक केवल बाहरी सिस्टम के कैश पढ़ता है।"
+    no_url: "कोई URL कॉन्फ़िगर नहीं है"
+    supervisor_short: "Supervisor टोकन का उपयोग हो रहा है"
+    mdns_unconfigured: "डिवाइस खोज निष्क्रिय है"
     cap_heading: "क्षमताएँ"
     cap_creates: "डिवाइस बनाता है"
     cap_updates: "डिवाइस अपडेट करता है"
@@ -345,6 +372,8 @@ settings:
     sync_error: "त्रुटि"
     sync_done: "पूर्ण - बनाए गए <strong>{created}</strong>, अपडेट किए गए <strong>{updated}</strong>, अपरिवर्तित <strong>{unchanged}</strong>।"
     sync_done_otbr: "पूर्ण - नेटवर्क <strong>{network}</strong> सहेजा गया।"
+    auto_locate: "अज्ञात Thread डिवाइस अपने आप पहचानें"
+    auto_locate_hint: "जब नेटवर्क में कोई Thread डिवाइस दिखे जिसे रजिस्ट्री नाम नहीं दे पाती, तो राउटरों से एक-एक करके पूछा जाता है कि वह रजिस्ट्री का कौन-सा डिवाइस है। Thread मेश पर कुछ केवल-पढ़ने वाले डायग्नोस्टिक अनुरोध भेजता है।"
     status:
       connected: "कनेक्टेड"
       connecting: "कनेक्ट हो रहा है"
@@ -357,13 +386,12 @@ product:
   list:
     title: "उत्पाद"
     new_btn: "+ नया उत्पाद"
-    search_label: "खोजें"
+    filter_label: "फ़िल्टर"
     search_placeholder: "नाम, विक्रेता, मॉडल, VID/PID, विवरण…"
     protocol_label: "प्रोटोकॉल"
     vendor_label: "विक्रेता"
     all_protocols: "सभी प्रोटोकॉल"
     all_vendors: "सभी विक्रेता"
-    clear_filters: "सभी साफ़ करें"
     col_thumb: "आइकन"
     col_product: "उत्पाद"
     col_vendor: "विक्रेता"
@@ -374,8 +402,11 @@ product:
     empty: "अभी तक कोई उत्पाद नहीं।"
     empty_add: "उत्पाद बनाएँ →"
     filtered_empty: "वर्तमान फ़िल्टर से कोई उत्पाद मेल नहीं खाता।"
-    clear_all_filters: "सभी फ़िल्टर साफ़ करें"
     matching: "फ़िल्टर से मेल खाते"
+
+    view_label: "उत्पाद दृश्य"
+    table_view: "तालिका"
+    card_view: "कार्ड"
 
   form:
     new_title: "नया उत्पाद"
@@ -476,6 +507,12 @@ modal:
   delete: "हटाएँ"
 
 network:
+  thread_link_legend: "Thread लिंक"
+  weak_thread_link_legend: "कमज़ोर Thread लिंक"
+  wifi_link_legend: "Wi-Fi लिंक"
+  diagram_desc: "सहेजे गए कनेक्शन कमरों के अनुसार समूहित हैं।"
+  unassigned_room: "असाइन नहीं किया गया"
+  empty_nodes: "सहेजी गई टोपोलॉजी में कोई नोड नहीं है।"
   title: "नेटवर्क"
   topology_heading: "टोपोलॉजी"
   empty_topology: "अभी कोई टोपोलॉजी नहीं है। Matter सर्वर समर्थन करे तो सिंक के बाद यह दिखती है।"
@@ -486,19 +523,25 @@ network:
   col_network: "नेटवर्क"
   col_address: "पता"
   connections_heading: "लिंक"
+  mesh_view: "मेश"
+  empty_links: "सहेजी गई टोपोलॉजी में कोई कनेक्शन नहीं है।"
   col_from: "से"
   col_to: "तक"
   col_strength: "मज़बूती"
-  col_signal: "सिग्नल"
+  col_link_quality: "लिंक गुणवत्ता"
+  col_rssi: "RSSI"
   border_routers_heading: "Thread बॉर्डर राउटर (mDNS)"
   empty_border_routers: "कोई नहीं मिला। mDNS डिस्कवरी आवश्यक है।"
   col_device: "डिवाइस"
   col_thread_version: "Thread"
   commissionable_heading: "कमीशनिंग के लिए खुले (mDNS)"
+  discoverable_heading: "खोजे जा सकते हैं, कमीशनिंग के लिए तैयार नहीं (mDNS)"
   empty_commissionable: "कोई Matter डिवाइस कमीशनिंग के लिए विज्ञापन नहीं कर रहा।"
   col_vid_pid: "VID / PID"
   col_discriminator: "डिस्क्रिमिनेटर"
   col_mode: "मोड"
+  mode_basic: "बुनियादी"
+  mode_enhanced: "उन्नत"
 
 dcl:
   lookup_btn: "CSA DCL में खोजें"

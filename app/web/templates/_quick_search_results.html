@@ -1,0 +1,21 @@
+{% if devices %}
+<h3>{{ t.quick_search.devices }}</h3>
+{% for d in devices %}
+<a href="{{ url('/devices/' + d.id) }}"><strong>{{ d.name }}</strong><small>{{ d.vendor or '' }}{% if d.room %} · {{ d.room }}{% endif %}</small></a>
+{% endfor %}
+{% endif %}
+{% if products %}
+<h3>{{ t.quick_search.products }}</h3>
+{% for p in products %}
+<a href="{{ url('/products/' + p.id) }}"><strong>{{ p.name }}</strong><small>{{ p.vendor or '' }}{% if p.model %} · {{ p.model }}{% endif %}</small></a>
+{% endfor %}
+{% endif %}
+{% if not q %}
+<h3>{{ t.quick_search.pages }}</h3>
+<a href="{{ url('/devices') }}">{{ t.nav.devices }}</a>
+<a href="{{ url('/products') }}">{{ t.nav.products }}</a>
+<a href="{{ url('/network') }}">{{ t.nav.network }}</a>
+<a href="{{ url('/settings') }}">{{ t.nav.settings }}</a>
+{% elif not devices and not products %}
+<p class="mr-empty">{{ t.quick_search.no_results }}</p>
+{% endif %}

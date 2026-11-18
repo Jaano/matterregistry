@@ -11,7 +11,7 @@
   display: inline-block;
   width: 1.1em;
   height: 1.1em;
-  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='-3 -3 30 30'><rect x='-3' y='-3' width='30' height='30' rx='4.5' fill='%23ffffff'/><path fill='%23374151' d='m12 21l3.6-4.8c-1-.75-2.25-1.2-3.6-1.2s-2.6.45-3.6 1.2zm0-18C7.95 3 4.21 4.34 1.2 6.6L3 9c2.5-1.88 5.62-3 9-3s6.5 1.12 9 3l1.8-2.4C19.79 4.34 16.05 3 12 3m0 6c-2.7 0-5.19.89-7.2 2.4l1.8 2.4C8.1 12.67 9.97 12 12 12s3.9.67 5.4 1.8l1.8-2.4C17.19 9.89 14.7 9 12 9'/></svg>");
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='-3 -3 30 30'><rect x='-3' y='-3' width='30' height='30' rx='4.5' fill='%23ffffff'/><path fill='%2364748b' d='m12 21l3.6-4.8c-1-.75-2.25-1.2-3.6-1.2s-2.6.45-3.6 1.2zm0-18C7.95 3 4.21 4.34 1.2 6.6L3 9c2.5-1.88 5.62-3 9-3s6.5 1.12 9 3l1.8-2.4C19.79 4.34 16.05 3 12 3m0 6c-2.7 0-5.19.89-7.2 2.4l1.8 2.4C8.1 12.67 9.97 12 12 12s3.9.67 5.4 1.8l1.8-2.4C17.19 9.89 14.7 9 12 9'/></svg>");
   background-size: contain;
   background-repeat: no-repeat;
   background-position: center;
@@ -22,7 +22,7 @@
   display: inline-block;
   width: 1.1em;
   height: 1.1em;
-  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' fill='%23374151' viewBox='-12 -12 124 124'><rect x='-12' y='-12' width='124' height='124' rx='18' fill='%23ffffff'/><path d='M53.842 100H41.357V37.614h-18.75c-5.562 0-10.117 4.536-10.117 10.111 0 5.565 4.555 10.102 10.117 10.102v12.49C10.145 70.317 0 60.186 0 47.727c0-12.465 10.145-22.6 22.605-22.6h18.75v-6.32C41.355 8.44 49.794 0 60.174 0 70.53 0 78.959 8.44 78.959 18.807c0 10.367-8.428 18.807-18.785 18.807H53.84L53.842 100Zm0-74.875h6.334c3.486 0 6.308-2.833 6.308-6.32 0-3.486-2.822-6.32-6.308-6.32-3.497 0-6.334 2.833-6.334 6.32v6.32Z'/></svg>");
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' fill='%23f37035' viewBox='-12 -12 124 124'><rect x='-12' y='-12' width='124' height='124' rx='18' fill='%23ffffff'/><path d='M53.842 100H41.357V37.614h-18.75c-5.562 0-10.117 4.536-10.117 10.111 0 5.565 4.555 10.102 10.117 10.102v12.49C10.145 70.317 0 60.186 0 47.727c0-12.465 10.145-22.6 22.605-22.6h18.75v-6.32C41.355 8.44 49.794 0 60.174 0 70.53 0 78.959 8.44 78.959 18.807c0 10.367-8.428 18.807-18.785 18.807H53.84L53.842 100Zm0-74.875h6.334c3.486 0 6.308-2.833 6.308-6.32 0-3.486-2.822-6.32-6.308-6.32-3.497 0-6.334 2.833-6.334 6.32v6.32Z'/></svg>");
   background-size: contain;
   background-repeat: no-repeat;
   background-position: center;
@@ -33,7 +33,7 @@
   display: inline-block;
   width: 1.1em;
   height: 1.1em;
-  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='-3 -3 30 30'><rect x='-3' y='-3' width='30' height='30' rx='4.5' fill='%23ffffff'/><path fill='none' stroke='%23374151' stroke-linecap='round' stroke-linejoin='round' stroke-width='2.5' d='m15 20l3-3h2a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h2l3 3zM6 8v1m4-1v1m4-1v1m4-1v1'/></svg>");
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='-3 -3 30 30'><rect x='-3' y='-3' width='30' height='30' rx='4.5' fill='%23ffffff'/><path fill='none' stroke='%2310b981' stroke-linecap='round' stroke-linejoin='round' stroke-width='2.5' d='m15 20l3-3h2a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h2l3 3zM6 8v1m4-1v1m4-1v1m4-1v1'/></svg>");
   background-size: contain;
   background-repeat: no-repeat;
   background-position: center;
@@ -44,7 +44,7 @@
   display: inline-block;
   width: 1.1em;
   height: 1.1em;
-  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='-3 -3 30 30'><rect x='-3' y='-3' width='30' height='30' rx='4.5' fill='%23ffffff'/><path fill='%23374151' d='M14.88 16.29L13 18.17v-3.76m0-8.58l1.88 1.88L13 9.58m4.71-1.87L12 2h-1v7.58L6.41 5L5 6.41L10.59 12L5 17.58L6.41 19L11 14.41V22h1l5.71-5.71l-4.3-4.29z'/></svg>");
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='-3 -3 30 30'><rect x='-3' y='-3' width='30' height='30' rx='4.5' fill='%23ffffff'/><path fill='%230082fc' d='M14.88 16.29L13 18.17v-3.76m0-8.58l1.88 1.88L13 9.58m4.71-1.87L12 2h-1v7.58L6.41 5L5 6.41L10.59 12L5 17.58L6.41 19L11 14.41V22h1l5.71-5.71l-4.3-4.29z'/></svg>");
   background-size: contain;
   background-repeat: no-repeat;
   background-position: center;
