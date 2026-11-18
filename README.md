@@ -23,7 +23,7 @@ The application has no login screen. It is meant to stay on a private LAN, with 
   </tr>
   <tr>
     <td width="50%"><img src="docs/screenshots/product-detail.png" alt="Product detail page"><br><sub><b>Product catalog</b> - vendor/model identity, VID/PID, links & media shared across every device of that product.</sub></td>
-    <td width="50%"></td>
+    <td width="50%"><img src="docs/screenshots/network-mesh.png" alt="Network mesh grouped by room"><br><sub><b>Network mesh</b> - devices grouped by room, with Thread and Wi-Fi links styled by link quality.</sub></td>
   </tr>
 </table>
 
