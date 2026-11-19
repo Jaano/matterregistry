@@ -3,8 +3,10 @@ from datetime import UTC, date, datetime
 from enum import StrEnum
 
 from sqlalchemy import JSON as SA_JSON
-from sqlalchemy import Column, Index, LargeBinary, UniqueConstraint, text
+from sqlalchemy import CheckConstraint, Column, Index, LargeBinary, UniqueConstraint, text
 from sqlmodel import Field, Relationship, SQLModel
+
+from .matter_device_types import MAX_MATTER_DEVICE_TYPE_ID, is_matter_device_type_id
 
 
 class DeviceProtocol(StrEnum):
@@ -119,6 +121,7 @@ PRODUCT_SOURCED_FIELDS: tuple[str, ...] = (
     "model",
     "vendor_id",
     "product_id",
+    "device_type_id",
     "description",
 )
 
@@ -164,8 +167,23 @@ def _now() -> datetime:
     return datetime.now(UTC)
 
 
+def validate_product_device_type(protocol: DeviceProtocol | str | None, value: object) -> None:
+    if value is None:
+        return
+    if protocol != DeviceProtocol.matter:
+        raise ValueError("Only Matter products can have a Matter device type")
+    if not is_matter_device_type_id(value):
+        raise ValueError("Matter device type must be a positive 32-bit integer")
+
+
 class Product(SQLModel, table=True):
     __table_args__ = (
+        CheckConstraint(
+            "device_type_id IS NULL OR (protocol IS NOT NULL AND protocol = 'matter' "
+            "AND typeof(device_type_id) = 'integer' "
+            f"AND device_type_id BETWEEN 1 AND {MAX_MATTER_DEVICE_TYPE_ID})",
+            name="ck_product_matter_device_type",
+        ),
         Index(
             "uq_product_matter_vid_pid",
             "protocol",
@@ -185,6 +203,7 @@ class Product(SQLModel, table=True):
     model: str | None = None
     vendor_id: int | None = None
     product_id: int | None = None
+    device_type_id: int | None = None
     description: str | None = None
     created_at: datetime = Field(default_factory=_now)
     updated_at: datetime = Field(default_factory=_now)
@@ -194,6 +213,7 @@ class Product(SQLModel, table=True):
     model_source: FieldSource = Field(default=FieldSource.generated)
     vendor_id_source: FieldSource = Field(default=FieldSource.generated)
     product_id_source: FieldSource = Field(default=FieldSource.generated)
+    device_type_id_source: FieldSource = Field(default=FieldSource.generated)
     description_source: FieldSource = Field(default=FieldSource.generated)
 
     devices: list["Device"] = Relationship(back_populates="product_record")

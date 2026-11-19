@@ -381,6 +381,10 @@ settings:
       error: "error"
 
 product:
+  device_type:
+    label: "Matter device type"
+    none: "Not set"
+    unknown: "Unknown device type"
   list:
     title: "Products"
     view_label: "Product view"
@@ -511,6 +515,7 @@ network:
   wifi_link_legend: "Wi-Fi link"
   diagram_desc: "Stored connections grouped by room."
   unassigned_room: "Unassigned"
+  no_topology_entry: "No saved topology entry"
   empty_nodes: "No nodes in the stored topology."
   title: "Network"
   topology_heading: "Topology"

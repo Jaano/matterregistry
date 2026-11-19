@@ -383,6 +383,10 @@ settings:
       error: "помилка"
 
 product:
+  device_type:
+    label: "Тип пристрою Matter"
+    none: "Не задано"
+    unknown: "Невідомий тип пристрою"
   list:
     title: "Продукти"
     new_btn: "+ Новий продукт"
@@ -512,6 +516,7 @@ network:
   wifi_link_legend: "Зв'язок Wi-Fi"
   diagram_desc: "Збережені з'єднання згруповано за кімнатами."
   unassigned_room: "Не призначено"
+  no_topology_entry: "Немає запису в збереженій топології"
   empty_nodes: "У збереженій топології немає вузлів."
   title: "Мережа"
   topology_heading: "Топологія"

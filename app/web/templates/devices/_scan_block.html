@@ -1,6 +1,6 @@
 {# _scan_block.html - reusable scan + manual-entry block.
    Context variables expected:
-     scan_mode:   "new"  → capture payload into parent form's hidden input #new-device-qr-payload
+     scan_mode:   "new"  → capture payload into the parent form's QR input
                   "edit" → POST directly to scan_action URL
      scan_action: (edit mode only) form action URL
 #}
@@ -60,9 +60,10 @@
     {% if scan_mode == "edit" %}
     <form method="post" action="{{ scan_action }}" id="form-payload">
     {% endif %}
-      <label class="block text-xs text-gray-500 mb-1">{{ t.scan_block.payload_label }}</label>
-      <input type="text" name="payload" id="manual-payload-input" placeholder="MT:... or X-HM://..."
-             {% if scan_mode == "edit" %}required{% endif %}
+      <label for="manual-payload-input" class="block text-xs text-gray-500 mb-1">{{ t.scan_block.payload_label }}</label>
+      <input type="text" name="{{ 'qr_payload' if scan_mode == 'new' else 'payload' }}" id="manual-payload-input" placeholder="MT:... or X-HM://..."
+             {% if scan_mode == "edit" %}required{% else %}value="{{ submitted_qr_payload }}" autocomplete="off"
+             {% if scan_error %}aria-invalid="true" aria-describedby="new-device-scan-error" autofocus{% endif %}{% endif %}
              class="w-full border border-gray-300 rounded px-3 py-2 text-sm font-mono mb-3">
       {% if scan_mode == "new" %}
       <button type="button" id="btn-capture-payload"
@@ -265,26 +266,22 @@
   });
 
   {% if scan_mode == "new" %}
-  // New-device mode: capture payload into the parent form's hidden input
+  // Camera scans and pasted codes use the same editable field.
+  const payloadInput = document.getElementById('manual-payload-input');
+  const capturedBadge = document.getElementById('qr-captured');
+  const capturedPreview = document.getElementById('qr-captured-preview');
   function capturePayload(value) {
-    value = (value || '').trim();
+    value = value.trim();
     if (!value) return;
-    var hiddenInput = document.getElementById('new-device-qr-payload');
-    if (hiddenInput) hiddenInput.value = value;
-    var badge = document.getElementById('qr-captured');
-    if (badge) {
-      badge.classList.remove('hidden');
-      var preview = document.getElementById('qr-captured-preview');
-      if (preview) preview.textContent = value.length > 50 ? value.slice(0, 50) + '…' : value;
-    }
+    payloadInput.value = value;
+    capturedPreview.textContent = value.length > 50 ? value.slice(0, 50) + '…' : value;
+    capturedBadge.classList.remove('hidden');
   }
 
-  var btnCapture = document.getElementById('btn-capture-payload');
-  if (btnCapture) {
-    btnCapture.addEventListener('click', function () {
-      capturePayload(document.getElementById('manual-payload-input').value);
-    });
-  }
+  payloadInput.addEventListener('input', () => capturedBadge.classList.add('hidden'));
+  document.getElementById('btn-capture-payload').addEventListener('click', () => {
+    capturePayload(payloadInput.value);
+  });
   {% else %}
   // Edit mode: Verhoeff check for Matter manual code
   const mcInput = document.getElementById('manual-code-input');

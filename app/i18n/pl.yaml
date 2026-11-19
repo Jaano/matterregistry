@@ -383,6 +383,10 @@ settings:
       error: "błąd"
 
 product:
+  device_type:
+    label: "Typ urządzenia Matter"
+    none: "Nie ustawiono"
+    unknown: "Nieznany typ urządzenia"
   list:
     title: "Produkty"
     new_btn: "+ Nowy produkt"
@@ -512,6 +516,7 @@ network:
   wifi_link_legend: "Łącze Wi-Fi"
   diagram_desc: "Zapisane połączenia pogrupowane według pomieszczeń."
   unassigned_room: "Nieprzypisane"
+  no_topology_entry: "Brak wpisu w zapisanej topologii"
   empty_nodes: "Brak węzłów w zapisanej topologii."
   title: "Sieć"
   topology_heading: "Topologia"

@@ -49,6 +49,7 @@ def build_export(session: Session, *, app_version: str) -> dict:
             "model": product.model,
             "vendor_id": product.vendor_id,
             "product_id": product.product_id,
+            "device_type_id": product.device_type_id,
             "description": product.description,
             "created_at": _iso(product.created_at),
             "updated_at": _iso(product.updated_at),

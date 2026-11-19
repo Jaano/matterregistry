@@ -383,6 +383,10 @@ settings:
       error: "virhe"
 
 product:
+  device_type:
+    label: "Matter-laitetyyppi"
+    none: "Ei määritetty"
+    unknown: "Tuntematon laitetyyppi"
   list:
     title: "Tuotteet"
     new_btn: "+ Uusi tuote"
@@ -512,6 +516,7 @@ network:
   wifi_link_legend: "Wi-Fi-yhteys"
   diagram_desc: "Tallennetut yhteydet huoneittain."
   unassigned_room: "Määrittämätön"
+  no_topology_entry: "Ei merkintää tallennetussa topologiassa"
   empty_nodes: "Tallennetussa topologiassa ei ole solmuja."
   title: "Verkko"
   topology_heading: "Topologia"

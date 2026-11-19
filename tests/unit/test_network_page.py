@@ -1,4 +1,4 @@
-"""Web tests for the read-only /network page (stored topology)."""
+"""Web tests for the read-only /network page."""
 
 from __future__ import annotations
 
@@ -19,6 +19,7 @@ from app.database import get_session
 from app.models import (
     Device,
     DeviceFabricMembership,
+    DeviceStatus,
     Fabric,
     MatterTopologySnapshot,
     Product,
@@ -75,18 +76,22 @@ def client(tmp_path: Path) -> Iterator[TestClient]:
     yield TestClient(app)
 
 
-def _seed_topology(client: TestClient) -> None:
+def _seed_topology(
+    client: TestClient, *, status: DeviceStatus = DeviceStatus.active, role: str = "router"
+) -> None:
     engine = client.app.state.test_engine  # type: ignore[union-attr]
     with Session(engine) as s:
         product = Product(name="Lamp")
         s.add(product)
         s.flush()
-        device = Device(name="Hall lamp", room="Hall", product_record_id=product.id)
+        device = Device(name="Hall lamp", room="Hall", product_record_id=product.id, status=status)
         fabric = Fabric(fabric_id="1" * 16, controller="HA")
         s.add_all([device, fabric])
         s.flush()
         s.add(DeviceFabricMembership(device_id=device.id, fabric_id=fabric.id, node_id=18))
-        s.add(MatterTopologySnapshot(collected_at="x", payload_json=json.dumps(TOPOLOGY)))
+        first_node, *other_nodes = TOPOLOGY["nodes"]
+        topology = {**TOPOLOGY, "nodes": [{**first_node, "role": role}, *other_nodes]}
+        s.add(MatterTopologySnapshot(collected_at="x", payload_json=json.dumps(topology)))
         s.commit()
 
 
@@ -187,11 +192,14 @@ def test_network_table_links_matched_target_device(client: TestClient):
 
 
 def test_thread_routers_stay_unidentified_without_a_stored_ext_address(client: TestClient):
-    _seed_ext_topology(client, stored_ext=None)
+    device_id = _seed_ext_topology(client, stored_ext=None)
     mesh = client.get("/network").text
     assert "Thread device BA82D38D09F446A4" in mesh
     assert "Thread device 826489F37BDA5203" in mesh
-    assert "Nanoleaf A19 2XGA" not in mesh
+    assert f'data-node-id="registry:{device_id}"' in mesh
+    assert 'aria-label="Nanoleaf A19 2XGA · No saved topology entry"' in mesh
+    assert f'data-source="registry:{device_id}"' not in mesh
+    assert f'data-target="registry:{device_id}"' not in mesh
     assert 'aria-label="Unassigned"' in mesh
 
 
@@ -206,6 +214,76 @@ def test_empty_state_without_topology(client: TestClient):
 
 def test_nav_links_to_network_page(client: TestClient):
     assert 'href="/network"' in client.get("/network").text
+
+
+def test_mesh_shows_registered_devices_without_a_snapshot(client: TestClient):
+    with Session(client.app.state.test_engine) as session:  # type: ignore[union-attr]
+        device = Device(name="Stored access point", room="Office")
+        hidden_device = Device(name="Hidden sensor", room="Garage", status=DeviceStatus.hidden)
+        session.add_all([device, hidden_device])
+        session.commit()
+        device_id = device.id
+
+    mesh = client.get("/network?view=mesh")
+    assert mesh.status_code == 200
+    assert "No topology yet" in mesh.text
+    assert 'class="mr-room" aria-label="Office"' in mesh.text
+    assert f'href="/devices/{device_id}"' in mesh.text
+    assert 'title="Stored access point · No saved topology entry"' in mesh.text
+    assert "Hidden sensor" not in mesh.text
+    assert 'aria-label="Garage"' not in mesh.text
+    assert 'data-source="' not in mesh.text
+
+    table = client.get("/network?view=table")
+    assert "No topology yet" in table.text
+    assert "Stored access point" not in table.text
+
+
+@pytest.mark.parametrize(
+    ("role", "visible"),
+    [
+        ("router", True),
+        ("leader", True),
+        ("reed", False),
+        ("end_device", False),
+        ("station", False),
+    ],
+)
+def test_network_visibility_of_hidden_snapshot_nodes(client: TestClient, role: str, visible: bool):
+    _seed_topology(client, status=DeviceStatus.hidden, role=role)
+    mesh = client.get("/network?view=mesh")
+    table = client.get("/network?view=table")
+
+    assert mesh.status_code == table.status_code == 200
+    assert 'data-node-id="br1"' in mesh.text
+    assert ('data-node-id="18"' in mesh.text) == visible
+    assert ('aria-label="Hall"' in mesh.text) == visible
+    assert ('data-source="18" data-target="br1"' in mesh.text) == visible
+    assert ("Hall lamp" in mesh.text) == visible
+    assert ("Hall lamp" in table.text) == visible
+    assert ("Kitchen" in table.text) == visible
+
+
+def test_mesh_adds_missing_registry_device_alongside_saved_links(client: TestClient):
+    _seed_topology(client)
+    with Session(client.app.state.test_engine) as session:  # type: ignore[union-attr]
+        device = Device(name="Hall lamp", room="Office")
+        session.add(device)
+        session.commit()
+        device_id = device.id
+
+    mesh = client.get("/network")
+    assert mesh.status_code == 200
+    assert 'class="mr-room" aria-label="Office"' in mesh.text
+    assert 'aria-label="Hall lamp (1) · Mesh Extender (Router) · MyHome"' in mesh.text
+    assert 'aria-label="Hall lamp (2) · No saved topology entry"' in mesh.text
+    assert mesh.text.count(f'href="/devices/{device_id}"') == 1
+    assert mesh.text.count("<li data-source=") == 1
+    assert 'data-source="18" data-target="br1"' in mesh.text
+
+    table = client.get("/network?view=table")
+    assert ">Hall lamp (1)</a>" in table.text
+    assert "Hall lamp (2)" not in table.text
 
 
 def test_topology_rows_use_registry_device_names_and_link_to_them(client: TestClient):

@@ -383,6 +383,10 @@ settings:
       error: "错误"
 
 product:
+  device_type:
+    label: "Matter 设备类型"
+    none: "未设置"
+    unknown: "未知设备类型"
   list:
     title: "产品"
     new_btn: "+ 新建产品"
@@ -512,6 +516,7 @@ network:
   wifi_link_legend: "Wi-Fi 链路"
   diagram_desc: "已保存的连接按房间分组。"
   unassigned_room: "未分配"
+  no_topology_entry: "已保存的拓扑中无此设备"
   empty_nodes: "已保存的拓扑中没有节点。"
   title: "网络"
   topology_heading: "拓扑"

@@ -8,7 +8,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, date, datetime
 
 from sqlalchemy import text
-from sqlmodel import Session, select
+from sqlmodel import Session, col, select
 
 from .models import (
     Attachment,
@@ -27,6 +27,7 @@ from .models import (
     Property,
     PropertyType,
     ThreadNetwork,
+    validate_product_device_type,
 )
 
 # Legacy PropertySource values map onto the unified FieldSource.
@@ -46,6 +47,7 @@ _VALID_PROP_TYPE = {s.value for s in PropertyType}
 _VALID_PROP_SOURCE = {s.value for s in FieldSource} | set(_LEGACY_PROP_SOURCE)
 _VALID_ATT_KIND = {s.value for s in AttachmentKind}
 _VALID_FIELD_SOURCE = {s.value for s in FieldSource}
+_TOPOLOGY_INTEGRATIONS = {"topology_border_router", "topology_wifi_ap"}
 
 
 def _normal(value: object) -> str:
@@ -110,6 +112,10 @@ class ImportPlan:
     skips: list[str] = field(default_factory=list)
     errors: list[str] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
+    device_links: list[dict] = field(default_factory=list, repr=False)
+    product_id_map: dict[str, str] = field(default_factory=dict, repr=False)
+    fabrics: list[dict] = field(default_factory=list, repr=False)
+    fabric_memberships: list[dict] = field(default_factory=list, repr=False)
 
 
 def _get_current_revision(session: Session) -> str | None:
@@ -185,6 +191,144 @@ def _validate_attachment(a: dict, dev_id: str) -> list[str]:
     return errors
 
 
+def _plan_device_links(
+    session: Session,
+    payload: dict,
+    device_ids: set[str],
+    *,
+    replace: bool,
+    plan: ImportPlan,
+) -> None:
+    # Replace deletes destination links. Only Skip existing keeps their claims.
+    existing_links = (
+        []
+        if replace
+        else session.exec(
+            select(DeviceLink).where(col(DeviceLink.integration).in_(_TOPOLOGY_INTEGRATIONS))
+        ).all()
+    )
+    existing_owners = {
+        (link.integration, link.external_id): link.device_id for link in existing_links
+    }
+    existing_assignments = {(link.device_id, link.integration) for link in existing_links}
+    backup_owners: dict[tuple[str, str], str] = {}
+    backup_assignments: set[tuple[str, str]] = set()
+
+    for link in payload.get("device_links", []):
+        integration = link.get("integration")
+        if integration not in _TOPOLOGY_INTEGRATIONS:
+            plan.device_links.append(link)
+            continue
+        device_id = link.get("device_id")
+        if not isinstance(device_id, str) or device_id not in device_ids:
+            continue
+        external_id = link.get("external_id")
+        if not isinstance(external_id, str) or not external_id:
+            plan.errors.append(f"Device {device_id} has a {integration} link without an identity")
+            continue
+        identity = (integration, external_id)
+        assignment = (device_id, integration)
+        backup_owner = backup_owners.get(identity)
+        if backup_owner is not None:
+            if backup_owner != device_id:
+                plan.errors.append(
+                    f"Topology identity {integration}:{external_id} is linked to multiple Devices"
+                )
+            continue
+        if assignment in backup_assignments:
+            plan.errors.append(f"Device {device_id} has multiple {integration} topology identities")
+            continue
+        backup_owners[identity] = device_id
+        backup_assignments.add(assignment)
+
+        owner = existing_owners.get(identity)
+        if owner is not None:
+            if owner != device_id:
+                plan.warnings.append(
+                    f"Skipped topology link {integration}:{external_id}: "
+                    "the destination already links it to a different Device."
+                )
+            continue
+        if assignment in existing_assignments:
+            plan.warnings.append(
+                f"Skipped topology link {integration}:{external_id}: "
+                f"Device {device_id} already has a different {integration} identity."
+            )
+            continue
+        plan.device_links.append(link)
+
+
+def _matter_product_key(
+    protocol: DeviceProtocol | str | None, vendor_id: int | None, product_id: int | None
+) -> tuple[int, int] | None:
+    if protocol == DeviceProtocol.matter and vendor_id is not None and product_id is not None:
+        return vendor_id, product_id
+    return None
+
+
+def _plan_fabrics(session: Session, payload: dict, plan: ImportPlan, *, replace: bool) -> None:
+    fabrics = payload.get("fabrics", [])
+    memberships = payload.get("device_fabric_memberships", [])
+    existing_fabrics = session.exec(select(Fabric)).all()
+    existing_ids = {row.id for row in existing_fabrics if row.id is not None}
+
+    if replace:
+        plan.fabrics = fabrics
+        plan.fabric_memberships = memberships
+        for row in fabrics:
+            (plan.updates if row["id"] in existing_ids else plan.creates).append(
+                f"fabric:{row['id']}"
+            )
+        plan.creates.extend(f"membership:{row['id']}" for row in memberships)
+        return
+
+    by_identity = {row.fabric_id: row.id for row in existing_fabrics if row.id is not None}
+    aliases: dict[int, int] = {}
+    next_id = max(existing_ids | {row["id"] for row in fabrics}, default=0) + 1
+    for row in fabrics:
+        incoming_id = row["id"]
+        existing = by_identity.get(row["fabric_id"])
+        if existing is not None:
+            aliases[incoming_id] = existing
+            plan.skips.append(f"fabric:{incoming_id}")
+            continue
+        fabric_id = incoming_id
+        if fabric_id in existing_ids:
+            fabric_id = next_id
+            next_id += 1
+        aliases[incoming_id] = fabric_id
+        by_identity[row["fabric_id"]] = fabric_id
+        plan.fabrics.append({**row, "id": fabric_id})
+        plan.creates.append(f"fabric:{incoming_id}")
+
+    if not memberships:
+        return
+    existing_memberships = session.exec(select(DeviceFabricMembership)).all()
+    existing_membership_ids = {row.id for row in existing_memberships if row.id is not None}
+    occupied_nodes = {(row.fabric_id, row.node_id): row.device_id for row in existing_memberships}
+    next_id = max(existing_membership_ids | {row["id"] for row in memberships}, default=0) + 1
+    for row in memberships:
+        incoming_id = row["id"]
+        fabric_id = aliases.get(row["fabric_id"], row["fabric_id"])
+        identity = (fabric_id, row["node_id"])
+        linked_device = occupied_nodes.get(identity)
+        if linked_device is not None:
+            plan.skips.append(f"membership:{incoming_id}")
+            if linked_device != row["device_id"]:
+                plan.warnings.append(
+                    f"Skipped Matter fabric membership {incoming_id}: "
+                    "the destination already links that node to a different Device."
+                )
+            continue
+        membership_id = incoming_id
+        if membership_id in existing_membership_ids:
+            membership_id = next_id
+            next_id += 1
+        occupied_nodes[identity] = row["device_id"]
+        plan.fabric_memberships.append({**row, "id": membership_id, "fabric_id": fabric_id})
+        plan.creates.append(f"membership:{incoming_id}")
+
+
 def plan_import(session: Session, payload: dict, *, policy: str = "skip") -> ImportPlan:
     payload = _upgrade_legacy_products(payload)
     plan = ImportPlan()
@@ -206,20 +350,45 @@ def plan_import(session: Session, payload: dict, *, policy: str = "skip") -> Imp
             "Newer columns will load as NULL / extra columns will be ignored."
         )
 
-    existing_product_ids = {row.id for row in session.exec(select(Product)).all()}
-    product_ids = set(existing_product_ids)
+    existing_products = session.exec(select(Product)).all()
+    existing_product_ids = {row.id for row in existing_products}
+    product_ids = set() if policy == "replace" else existing_product_ids.copy()
+    existing_matter_products = {
+        key: row.id
+        for row in existing_products
+        if (key := _matter_product_key(row.protocol, row.vendor_id, row.product_id)) is not None
+    }
+    backup_matter_products: dict[tuple[int, int], str] = {}
     for product in payload.get("products", []):
         product_id = product.get("id")
         if not product_id or not product.get("name"):
             plan.errors.append("Product missing valid id or name")
             continue
+        try:
+            validate_product_device_type(product.get("protocol"), product.get("device_type_id"))
+        except ValueError as exc:
+            plan.errors.append(f"Product {product_id}: {exc}")
+            continue
+        key = _matter_product_key(
+            product.get("protocol"), product.get("vendor_id"), product.get("product_id")
+        )
+        if key is not None and backup_matter_products.setdefault(key, product_id) != product_id:
+            plan.errors.append(f"Backup has multiple Products for Matter VID/PID {key[0]}/{key[1]}")
+            continue
         product_ids.add(product_id)
         if product_id in existing_product_ids:
             (plan.updates if policy == "replace" else plan.skips).append(f"product:{product_id}")
+        elif policy != "replace" and key in existing_matter_products:
+            plan.product_id_map[product_id] = existing_matter_products[key]
+            plan.skips.append(f"product:{product_id}")
+            plan.warnings.append(
+                f"Reused the destination Product for Matter VID/PID {key[0]}/{key[1]}."
+            )
         else:
             plan.creates.append(f"product:{product_id}")
 
     existing_ids = {row.id for row in session.exec(select(Device)).all()}
+    restored_ids = set() if policy == "replace" else existing_ids.copy()
 
     for d in payload.get("devices", []):
         dev_errors = _validate_device(d)
@@ -231,6 +400,7 @@ def plan_import(session: Session, payload: dict, *, policy: str = "skip") -> Imp
         if d.get("product_record_id") not in product_ids:
             plan.errors.append(f"Device {dev_id}: unknown product_record_id")
             continue
+        restored_ids.add(dev_id)
         if dev_id in existing_ids:
             if policy == "replace":
                 plan.updates.append(f"device:{dev_id}")
@@ -254,14 +424,6 @@ def plan_import(session: Session, payload: dict, *, policy: str = "skip") -> Imp
             else:
                 plan.creates.append(f"attachment:{a.get('id', '?')}")
 
-    existing_fabric_ids = {row.id for row in session.exec(select(Fabric)).all()}
-    for f in payload.get("fabrics", []):
-        fid = f.get("id")
-        if fid in existing_fabric_ids:
-            (plan.updates if policy == "replace" else plan.skips).append(f"fabric:{fid}")
-        else:
-            plan.creates.append(f"fabric:{fid}")
-
     existing_tn_ids = {row.ext_pan_id for row in session.exec(select(ThreadNetwork)).all()}
     for tn in payload.get("thread_networks", []):
         epid = tn.get("ext_pan_id", "?")
@@ -270,41 +432,8 @@ def plan_import(session: Session, payload: dict, *, policy: str = "skip") -> Imp
         else:
             plan.creates.append(f"thread_network:{epid}")
 
-    for m in payload.get("device_fabric_memberships", []):
-        plan.creates.append(f"membership:{m.get('id', '?')}")
-
-    # Infrastructure links are unique by kind and hardware identity. Reject
-    # conflicting backups before an INSERT can fail the partial unique index.
-    topology_integrations = {"topology_border_router", "topology_wifi_ap"}
-    linked_identities = {
-        (link.integration, link.external_id): link.device_id
-        for link in session.exec(select(DeviceLink)).all()
-        if link.integration in topology_integrations
-    }
-    linked_device_kinds = {
-        (link.device_id, link.integration): link.external_id
-        for link in session.exec(select(DeviceLink)).all()
-        if link.integration in topology_integrations
-    }
-    for link in payload.get("device_links", []):
-        integration = link.get("integration")
-        if integration not in topology_integrations:
-            continue
-        key = (integration, link.get("external_id"))
-        device_id = link.get("device_id")
-        owner = linked_identities.get(key)
-        if owner is not None and owner != device_id:
-            plan.errors.append(f"Topology identity {key[0]}:{key[1]} is linked to multiple Devices")
-        elif isinstance(device_id, str):
-            linked_identities[key] = device_id
-            device_key = (device_id, integration)
-            existing_identity = linked_device_kinds.get(device_key)
-            if existing_identity is not None and existing_identity != key[1]:
-                plan.errors.append(
-                    f"Device {device_id} has multiple {integration} topology identities"
-                )
-            linked_device_kinds[device_key] = key[1]
-
+    _plan_fabrics(session, payload, plan, replace=policy == "replace")
+    _plan_device_links(session, payload, restored_ids, replace=policy == "replace", plan=plan)
     return plan
 
 
@@ -351,7 +480,7 @@ def apply_import(session: Session, payload: dict, *, policy: str = "skip") -> Im
     # ── Product / ProductLink ───────────────────────────────────────────────
     for product_data in payload.get("products", []):
         product_id = product_data["id"]
-        if session.get(Product, product_id):
+        if product_id in plan.product_id_map or session.get(Product, product_id) is not None:
             continue
         raw_sources: dict[str, str] = product_data.get("_sources") or {}
 
@@ -369,12 +498,14 @@ def apply_import(session: Session, payload: dict, *, policy: str = "skip") -> Im
                 model=product_data.get("model"),
                 vendor_id=product_data.get("vendor_id"),
                 product_id=product_data.get("product_id"),
+                device_type_id=product_data.get("device_type_id"),
                 description=product_data.get("description"),
                 name_source=_product_src("name"),
                 vendor_source=_product_src("vendor"),
                 model_source=_product_src("model"),
                 vendor_id_source=_product_src("vendor_id"),
                 product_id_source=_product_src("product_id"),
+                device_type_id_source=_product_src("device_type_id"),
                 description_source=_product_src("description"),
             )
         )
@@ -382,10 +513,23 @@ def apply_import(session: Session, payload: dict, *, policy: str = "skip") -> Im
     for link_data in payload.get("product_links", []):
         if session.get(ProductLink, link_data["id"]):
             continue
+        original_product_id = link_data["product_record_id"]
+        product_id = plan.product_id_map.get(original_product_id, original_product_id)
+        if (
+            product_id != original_product_id
+            and session.exec(
+                select(ProductLink.id).where(
+                    ProductLink.product_record_id == product_id,
+                    ProductLink.kind == link_data["kind"],
+                    ProductLink.url == link_data["url"],
+                )
+            ).first()
+        ):
+            continue
         session.add(
             ProductLink(
                 id=link_data["id"],
-                product_record_id=link_data["product_record_id"],
+                product_record_id=product_id,
                 kind=ProductLinkKind(link_data["kind"]),
                 url=link_data["url"],
                 label=link_data.get("label"),
@@ -402,6 +546,7 @@ def apply_import(session: Session, payload: dict, *, policy: str = "skip") -> Im
 
         pd = d.get("purchase_date")
         wu = d.get("warranty_until")
+        product_id = d["product_record_id"]
         # Restore per-field provenance.  Fall back to 'imported' for fields
         # that were non-null but had no _sources entry (older backups).
         device_sources: dict[str, str] = d.get("_sources") or {}
@@ -417,7 +562,7 @@ def apply_import(session: Session, payload: dict, *, policy: str = "skip") -> Im
             Device(
                 id=dev_id,
                 name=d["name"],
-                product_record_id=d["product_record_id"],
+                product_record_id=plan.product_id_map.get(product_id, product_id),
                 name_source=_src("name"),
                 room=d.get("room"),
                 room_source=_src("room"),
@@ -484,7 +629,7 @@ def apply_import(session: Session, payload: dict, *, policy: str = "skip") -> Im
             )
 
     # ── DeviceLink ───────────────────────────────────────────────────────────────
-    for lnk in payload.get("device_links", []):
+    for lnk in plan.device_links:
         if session.get(DeviceLink, lnk["id"]):
             continue
         # Don't reintroduce a link orphaned before export (or a corrupt backup
@@ -503,9 +648,7 @@ def apply_import(session: Session, payload: dict, *, policy: str = "skip") -> Im
             )
         )
     # ── Fabric ───────────────────────────────────────────────────────────────
-    for f in payload.get("fabrics", []):
-        if session.get(Fabric, f["id"]):
-            continue
+    for f in plan.fabrics:
         session.add(
             Fabric(
                 id=f["id"],
@@ -520,9 +663,7 @@ def apply_import(session: Session, payload: dict, *, policy: str = "skip") -> Im
         )
 
     # ── DeviceFabricMembership ────────────────────────────────────────────────
-    for m in payload.get("device_fabric_memberships", []):
-        if session.get(DeviceFabricMembership, m["id"]):
-            continue
+    for m in plan.fabric_memberships:
         session.add(
             DeviceFabricMembership(
                 id=m["id"],

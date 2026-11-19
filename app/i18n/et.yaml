@@ -383,6 +383,10 @@ settings:
       error: "viga"
 
 product:
+  device_type:
+    label: "Matteri seadme tüüp"
+    none: "Määramata"
+    unknown: "Tundmatu seadme tüüp"
   list:
     title: "Tooted"
     new_btn: "+ Uus toode"
@@ -512,6 +516,7 @@ network:
   wifi_link_legend: "Wi-Fi-ühendus"
   diagram_desc: "Salvestatud ühendused ruumide kaupa."
   unassigned_room: "Määramata"
+  no_topology_entry: "Salvestatud topoloogias puudub kirje"
   empty_nodes: "Salvestatud topoloogias pole sõlmi."
   title: "Võrk"
   topology_heading: "Topoloogia"

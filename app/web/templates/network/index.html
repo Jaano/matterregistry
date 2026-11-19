@@ -12,7 +12,8 @@
   </div>
   {% if not has_topology %}
     <p class="mr-empty">{{ t.network.empty_topology }}</p>
-  {% elif active_view == 'table' %}
+  {% endif %}
+  {% if active_view == 'table' %}
     {% if link_rows %}
     <div class="mr-table-wrap">
       <table class="mr-device-table mr-network-table">
@@ -29,9 +30,9 @@
         </tbody>
       </table>
     </div>
-    {% else %}<p class="mr-empty">{{ t.network.empty_links }}</p>{% endif %}
+    {% elif has_topology %}<p class="mr-empty">{{ t.network.empty_links }}</p>{% endif %}
   {% elif not node_rows %}
-    <p class="mr-empty">{{ t.network.empty_nodes }}</p>
+    {% if has_topology %}<p class="mr-empty">{{ t.network.empty_nodes }}</p>{% endif %}
   {% else %}
     <svg class="mr-role-defs" aria-hidden="true" focusable="false" width="0" height="0">
       <symbol id="mr-role-border-router" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="4"/><circle cx="12" cy="12" r="1" fill="currentColor" stroke="none"/></symbol>

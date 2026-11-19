@@ -80,6 +80,12 @@
         <dd class="font-mono">{{ product.vid_pid_display }}{{ src_badge(product.vendor_id_source) }}</dd>
       </div>
       {% endif %}
+      {% if product.device_type_id is not none %}
+      <div class="flex gap-2">
+        <dt class="text-gray-500 w-36 shrink-0">{{ t.product.device_type.label }}</dt>
+        <dd>{{ product.device_type_id | matter_device_type(t.product.device_type.unknown) }}{{ src_badge(product.device_type_id_source) }}</dd>
+      </div>
+      {% endif %}
       {% if product.description %}
       <div class="flex gap-2">
         <dt class="text-gray-500 w-36 shrink-0">{{ t.product.detail.field_description }}</dt>

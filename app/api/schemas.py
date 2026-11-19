@@ -1,7 +1,9 @@
 from datetime import date, datetime
+from typing import Annotated
 
-from pydantic import BaseModel, ConfigDict, HttpUrl, model_validator
+from pydantic import BaseModel, ConfigDict, Field, HttpUrl, model_validator
 
+from ..matter_device_types import MAX_MATTER_DEVICE_TYPE_ID
 from ..models import (
     DeviceProtocol,
     DeviceStatus,
@@ -131,6 +133,9 @@ class ProductLinkOut(BaseModel):
     model_config = {"from_attributes": True}
 
 
+_MatterDeviceTypeId = Annotated[int, Field(strict=True, gt=0, le=MAX_MATTER_DEVICE_TYPE_ID)]
+
+
 class ProductCreate(BaseModel):
     name: str
     protocol: DeviceProtocol | None = None
@@ -138,6 +143,7 @@ class ProductCreate(BaseModel):
     model: str | None = None
     vendor_id: int | None = None
     product_id: int | None = None
+    device_type_id: _MatterDeviceTypeId | None = None
     description: str | None = None
 
     model_config = ConfigDict(extra="forbid")
@@ -150,6 +156,7 @@ class ProductUpdate(BaseModel):
     model: str | None = None
     vendor_id: int | None = None
     product_id: int | None = None
+    device_type_id: _MatterDeviceTypeId | None = None
     description: str | None = None
 
     model_config = ConfigDict(extra="forbid")
@@ -163,6 +170,7 @@ class ProductOut(BaseModel):
     model: str | None
     vendor_id: int | None
     product_id: int | None
+    device_type_id: int | None
     description: str | None
     created_at: datetime
     updated_at: datetime

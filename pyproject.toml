@@ -4,19 +4,20 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "matterregistry"
-version = "0.5.0"
+version = "0.5.1"
 license = "Apache-2.0"
 requires-python = ">=3.13"
 dependencies = [
-    "fastapi>=0.115",
+    "fastapi>=0.164.0",
     "uvicorn[standard]>=0.30",
     "jinja2>=3.1",
-    "python-multipart>=0.0.9",
-    "sqlmodel>=0.0.21",
+    "python-multipart>=0.0.34",
+    "sqlmodel>=0.0.50",
+    "SQLAlchemy>=2.1.9",
     "alembic>=1.13",
     "httpx>=0.27",
     "PyYAML>=6.0",
-    "matter-python-client>=1.5.5,<2",
+    "matter-python-client>=1.6.0,<2",
     "segno>=1.6",
     "zeroconf>=0.130",
 ]

@@ -176,7 +176,7 @@ def test_ambiguous_address_does_not_create_third_device(engine):
         assert session.exec(select(DeviceLink)).all() == []
 
 
-def test_network_uses_hidden_device_room_and_links(engine, monkeypatch):
+def test_network_shows_hidden_infrastructure_in_the_saved_topology(engine, monkeypatch):
     monkeypatch.setattr("app.database.engine", engine)
     _store_topology(_topology())
     with Session(engine) as session:
@@ -185,6 +185,7 @@ def test_network_uses_hidden_device_room_and_links(engine, monkeypatch):
         session.add(br)
         session.commit()
         br_id = br.id
+        ap_id = next(d.id for d in session.exec(select(Device)).all() if d.network_type == ["wifi"])
 
     def _session() -> Iterator[Session]:
         with Session(engine) as session:
@@ -193,20 +194,23 @@ def test_network_uses_hidden_device_room_and_links(engine, monkeypatch):
     app = create_app()
     app.dependency_overrides[get_session] = _session
     client = TestClient(app)
-    mesh = client.get("/network")
-    table = client.get("/network?view=table")
+
     visible_devices = client.get("/devices")
     hidden_devices = client.get("/devices?status=hidden")
     products = client.get("/products")
-    assert mesh.status_code == table.status_code == 200
-    assert 'aria-label="Office"' in mesh.text
-    assert f'href="/devices/{br_id}"' in mesh.text
-    assert f'href="/devices/{br_id}"' in table.text
-    assert "No address" in mesh.text
     assert "Hub" not in visible_devices.text
     assert "Hub" in hidden_devices.text
     assert "Thread Border Router" in products.text
     assert "Wi-Fi Router / Access Point" in products.text
+
+    mesh = client.get("/network")
+    table = client.get("/network?view=table")
+    assert mesh.status_code == table.status_code == 200
+    assert 'aria-label="Office"' in mesh.text
+    for device_id in (br_id, ap_id):
+        assert f'href="/devices/{device_id}"' in mesh.text
+        assert f'href="/devices/{device_id}"' in table.text
+    assert "No address" in mesh.text
 
 
 def test_export_import_keeps_hidden_infrastructure(engine):
@@ -224,7 +228,57 @@ def test_export_import_keeps_hidden_infrastructure(engine):
         assert {d.status for d in session.exec(select(Device)).all()} == {DeviceStatus.hidden}
 
 
-def test_import_rejects_conflicting_topology_link(engine):
+@pytest.mark.parametrize("policy", ["skip", "replace"])
+def test_import_handles_topology_link_claimed_by_destination(engine, policy):
+    with Session(engine) as session:
+        assert project_infrastructure(session, _topology()) == 2
+        session.commit()
+        exported = build_export(session, app_version="test")
+    backup_owners = {row["external_id"]: row["device_id"] for row in exported["device_links"]}
+
+    destination = create_engine("sqlite://")
+    SQLModel.metadata.create_all(destination)
+    with Session(destination) as session:
+        assert project_infrastructure(session, _topology()) == 2
+        session.commit()
+        original_owners = {
+            row.external_id: row.device_id for row in session.exec(select(DeviceLink))
+        }
+        preview = plan_import(session, exported, policy=policy)
+        result = apply_import(session, exported, policy=policy)
+        assert not preview.errors and not result.errors
+        assert preview.warnings == result.warnings
+        session.commit()
+        restored_owners = {
+            row.external_id: row.device_id for row in session.exec(select(DeviceLink))
+        }
+        device_ids = set(session.exec(select(Device.id)))
+        if policy == "replace":
+            assert restored_owners == backup_owners
+            assert device_ids == set(backup_owners.values())
+            assert not any("Skipped topology link" in warning for warning in result.warnings)
+        else:
+            assert restored_owners == original_owners
+            assert device_ids == set(original_owners.values()) | set(backup_owners.values())
+            assert sum("Skipped topology link" in warning for warning in result.warnings) == 2
+
+
+def test_skip_import_does_not_duplicate_equivalent_topology_link(engine):
+    with Session(engine) as session:
+        assert project_infrastructure(session, _topology()) == 2
+        session.commit()
+        exported = build_export(session, app_version="test")
+        exported["device_links"][0]["id"] = "alternate-link-id"
+        result = apply_import(session, exported)
+        assert not result.errors
+        assert not any("Skipped topology link" in warning for warning in result.warnings)
+        session.commit()
+        assert len(session.exec(select(DeviceLink)).all()) == 2
+        assert session.get(DeviceLink, "alternate-link-id") is None
+
+
+@pytest.mark.parametrize("policy", ["skip", "replace"])
+def test_import_rejects_conflicting_topology_links_within_backup(engine, policy):
     with Session(engine) as session:
         assert project_infrastructure(session, _topology()) == 2
         session.commit()
@@ -234,6 +288,9 @@ def test_import_rejects_conflicting_topology_link(engine):
             for row in exported["device_links"]
             if row["integration"] == "topology_border_router"
         )
-        link["device_id"] = "another-device"
-        plan = plan_import(session, exported)
+        other_device = next(row for row in exported["devices"] if row["id"] != link["device_id"])
+        exported["device_links"].append(
+            {**link, "id": "conflicting-link", "device_id": other_device["id"]}
+        )
+        plan = plan_import(session, exported, policy=policy)
         assert any("linked to multiple Devices" in error for error in plan.errors)

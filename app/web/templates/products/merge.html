@@ -60,17 +60,20 @@
       <tbody>
         {% for row in preview %}
         {% if row.source_val is not none or row.target_val is not none %}
+        {% set is_device_type = row.field == 'device_type_id' %}
+        {% set source_val = (row.source_val | matter_device_type(t.product.device_type.unknown)) if is_device_type and row.source_val is not none else row.source_val %}
+        {% set target_val = (row.target_val | matter_device_type(t.product.device_type.unknown)) if is_device_type and row.target_val is not none else row.target_val %}
         <tr class="border-b border-gray-100 {% if row.conflict %}bg-yellow-50{% endif %}">
-          <td class="py-2 pr-4 text-gray-500 font-medium">{{ row.label }}</td>
+          <td class="py-2 pr-4 text-gray-500 font-medium">{{ t.product.device_type.label if is_device_type else row.label }}</td>
           <td class="py-2 pr-4 font-mono text-xs {% if row.winner == 'source' %}font-semibold text-gray-900{% else %}text-gray-400 line-through{% endif %}">
-            {{ row.source_val or "-" }}
+            {{ source_val if source_val is not none else "-" }}
           </td>
           <td class="py-2 pr-4 font-mono text-xs {% if row.winner == 'target' %}font-semibold text-gray-900{% else %}text-gray-400 line-through{% endif %}">
-            {{ row.target_val or "-" }}
+            {{ target_val if target_val is not none else "-" }}
           </td>
           <td class="py-2 font-mono text-xs text-gray-700">
-            {% if row.winner == 'source' %}{{ row.source_val }}
-            {% elif row.winner == 'target' %}{{ row.target_val }}
+            {% if row.winner == 'source' %}{{ source_val }}
+            {% elif row.winner == 'target' %}{{ target_val }}
             {% else %}-{% endif %}
             {% if row.conflict %}
             <span class="ml-1 text-yellow-600 text-xs font-sans">{{ t.product.merge.conflict }}</span>

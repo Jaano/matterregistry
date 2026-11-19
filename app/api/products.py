@@ -6,7 +6,15 @@ from sqlmodel import Session, col, select
 
 from ..audit import log as audit_log
 from ..database import get_session
-from ..models import PRODUCT_SOURCED_FIELDS, Device, FieldSource, Product, ProductLink
+from ..models import (
+    PRODUCT_SOURCED_FIELDS,
+    Device,
+    DeviceProtocol,
+    FieldSource,
+    Product,
+    ProductLink,
+    validate_product_device_type,
+)
 from .schemas import (
     ProductCreate,
     ProductLinkCreate,
@@ -50,6 +58,10 @@ def list_products(session: Session = Depends(get_session)):
 
 @router.post("", response_model=ProductOut, status_code=201)
 def create_product(data: ProductCreate, session: Session = Depends(get_session)):
+    try:
+        validate_product_device_type(data.protocol, data.device_type_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
     product = Product(**data.model_dump())
     for field in PRODUCT_SOURCED_FIELDS:
         if getattr(product, field, None) is not None:
@@ -74,10 +86,19 @@ def get_product(product_id: str, session: Session = Depends(get_session)):
 @router.patch("/{product_id}", response_model=ProductOut)
 def update_product(product_id: str, data: ProductUpdate, session: Session = Depends(get_session)):
     product = _load_product(product_id, session)
-    for field, value in data.model_dump(exclude_unset=True).items():
+    changes = data.model_dump(exclude_unset=True)
+    protocol = changes.get("protocol", product.protocol)
+    try:
+        validate_product_device_type(protocol, changes.get("device_type_id"))
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    if protocol != DeviceProtocol.matter and product.device_type_id is not None:
+        changes["device_type_id"] = None
+    for field, value in changes.items():
         if getattr(product, field) != value:
             setattr(product, field, value)
-            setattr(product, f"{field}_source", FieldSource.user)
+            if field in PRODUCT_SOURCED_FIELDS:
+                setattr(product, f"{field}_source", FieldSource.user)
     product.updated_at = datetime.now(UTC)
     session.add(product)
     audit_log(

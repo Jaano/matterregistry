@@ -6,11 +6,13 @@ from urllib.parse import urlparse
 from fastapi import APIRouter, Depends, File, Form, Request, UploadFile
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
+from sqlalchemy import text
 from sqlmodel import Session, col, or_, select
 
 from ..audit import log as audit_log
 from ..database import get_session
 from ..i18n import T, get_t, resolve_lang
+from ..matter_device_types import MATTER_DEVICE_TYPES, format_matter_device_type
 from ..models import (
     PRODUCT_SOURCED_FIELDS,
     Attachment,
@@ -27,6 +29,7 @@ from ..models import (
     ProductLinkKind,
     Property,
     PropertyType,
+    validate_product_device_type,
 )
 from ..settings import settings as app_settings
 from ..thread import thread_role_label
@@ -47,6 +50,9 @@ def _local_time(dt: datetime | None, fmt: str = "%Y-%m-%d %H:%M") -> str:
 templates.env.filters["host"] = lambda u: urlparse(u).netloc or u
 templates.env.filters["localtime"] = _local_time
 templates.env.filters["thread_role"] = thread_role_label
+templates.env.filters["matter_device_type"] = format_matter_device_type
+
+_DEVICE_TYPE_OPTIONS = sorted(MATTER_DEVICE_TYPES, key=MATTER_DEVICE_TYPES.__getitem__)
 
 logger = logging.getLogger(__name__)
 
@@ -276,15 +282,32 @@ def quick_search(
 
 @router.get("/devices/new", response_class=HTMLResponse)
 def device_new(request: Request, session: Session = Depends(get_session)):
+    return _new_device_form(request, session)
+
+
+def _new_device_form(
+    request: Request,
+    session: Session,
+    *,
+    name: str = "",
+    product_id: str = "",
+    qr_payload: str = "",
+    scan_error: str | None = None,
+    status_code: int = 200,
+):
     return templates.TemplateResponse(
         request,
         "devices/form.html",
         _ctx(
             request,
             device=None,
-            statuses=list(DeviceStatus),
             products=session.exec(select(Product).order_by(col(Product.name))).all(),
+            submitted_name=name,
+            submitted_product_id=product_id,
+            submitted_qr_payload=qr_payload,
+            scan_error=scan_error,
         ),
+        status_code=status_code,
     )
 
 
@@ -303,6 +326,9 @@ def device_create(
     session: Session = Depends(get_session),
 ):
     from datetime import date as date_type
+
+    from ..models import SOURCED_FIELDS
+    from ..services import ProtocolMismatchError, apply_scan_payload
 
     wu = None
     if warranty_until.strip():
@@ -323,34 +349,45 @@ def device_create(
         warranty_until=wu,
         network_type=sorted(set(network_type)),
     )
+    if selected_product is not None:
+        device.product_record = selected_product
+    placeholder = device.product_record if selected_product is None else None
     # All fields supplied via the web form are user-entered.
-    from ..models import SOURCED_FIELDS, FieldSource
-
     for f in SOURCED_FIELDS:
         if getattr(device, f, None) is not None:
             setattr(device, f"{f}_source", FieldSource.user)
     session.add(device)
+    payload = qr_payload.strip()
+    if payload:
+        try:
+            apply_scan_payload(session, device, payload)
+        except (ValueError, ProtocolMismatchError) as exc:
+            session.rollback()
+            return _new_device_form(
+                request,
+                session,
+                name=name,
+                product_id=product_record_id,
+                qr_payload=qr_payload,
+                scan_error=str(exc),
+                status_code=409 if isinstance(exc, ProtocolMismatchError) else 400,
+            )
+        if placeholder is not None and device.product_record is not placeholder:
+            session.delete(placeholder)
     audit_log(
         session,
         action="device.create",
         entity=f"device:{device.id}",
         reason="web.device_create",
     )
+    if payload:
+        audit_log(
+            session,
+            action="device.scan",
+            entity=f"device:{device.id}",
+            reason="web.device_create",
+        )
     session.commit()
-    if qr_payload.strip():
-        try:
-            from ..services import apply_scan_payload
-
-            apply_scan_payload(session, device, qr_payload.strip())
-            audit_log(
-                session,
-                action="device.scan",
-                entity=f"device:{device.id}",
-                reason="web.device_create",
-            )
-            session.commit()
-        except Exception:
-            session.rollback()
     return RedirectResponse(_url(request, f"/devices/{device.id}"), status_code=303)
 
 
@@ -783,7 +820,7 @@ def _wifi_lqi(rssi: int | float) -> int:
 
 @router.get("/network", response_class=HTMLResponse)
 def network_view(request: Request, session: Session = Depends(get_session), view: str = "mesh"):
-    """Read-only network view of stored Matter topology."""
+    """Read-only network view of registry Devices and stored Matter topology."""
     from ..integrations.matter_server.server_client import load_topology
     from ..integrations.matter_server.topology import (
         INFRASTRUCTURE_LINK_INTEGRATIONS,
@@ -794,6 +831,7 @@ def network_view(request: Request, session: Session = Depends(get_session), view
     )
 
     topology = load_topology(session)
+    network_text = _t(request).network
 
     # The server reports collection time as epoch ms/s or an ISO string.
     collected = (topology or {}).get("collected_at")
@@ -868,35 +906,25 @@ def network_view(request: Request, session: Session = Depends(get_session), view
             return devices_by_infrastructure.get(identity)
         return devices_by_ext.get(str(n.get("id")))
 
-    names_by_id = {}
-    nodes_by_name: dict[str, list[dict]] = {}
-    for n in nodes_by_id.values():
-        found = _resolved(n)
-        name = found[1] if found else node_label(n, _name)
-        names_by_id[n.get("id")] = name
-        nodes_by_name.setdefault(name, []).append(n)
-    for name, same_name in nodes_by_name.items():
-        if len(same_name) < 2:
-            continue
-        for number, n in enumerate(
-            sorted(
-                same_name,
-                key=lambda node: (
-                    str(node.get("bssid") or node.get("ext_address") or node.get("id")).casefold(),
-                    str(node.get("id")),
-                ),
-            ),
-            start=1,
-        ):
-            names_by_id[n.get("id")] = f"{name} ({number})"
+    registry_devices = session.exec(
+        select(Device.id, Device.name, Device.room, Device.status).order_by(
+            col(Device.name), col(Device.id)
+        )
+    ).all()
+    hidden_device_ids = {
+        device_id for device_id, _, _, status in registry_devices if status == DeviceStatus.hidden
+    }
 
-    def _label(n: dict) -> str:
-        return names_by_id[n.get("id")]
-
-    node_rows = []
-    for n in nodes_by_id.values():
+    topology_rows = {}
+    for node_id, n in nodes_by_id.items():
         found = _resolved(n)
         kind, role = n.get("kind"), n.get("role")
+        is_network_infrastructure = kind in {"wifi_ap", "border_router"} or role in {
+            "router",
+            "leader",
+        }
+        if found and found[0] in hidden_device_ids and not is_network_infrastructure:
+            continue
         if kind == "border_router":
             icon_role, role_name = "border_router", "Border Router"
         elif kind == "wifi_ap":
@@ -907,23 +935,53 @@ def network_view(request: Request, session: Session = Depends(get_session), view
             icon_role, role_name = role, role_label(role) or "Device"
         else:
             icon_role, role_name = "unknown", role_label(role) or "Unknown role"
+        topology_rows[node_id] = {
+            "label": found[1] if found else node_label(n, _name),
+            "id": str(node_id),
+            "device_id": found[0] if found else None,
+            "room": (found[2] if found else None) or network_text.unassigned_room,
+            "role": role_name,
+            "icon_role": icon_role,
+            "network": node_network_name(n),
+            "address": n.get("bssid") or n.get("ext_address"),
+        }
+
+    node_rows = list(topology_rows.values())
+    represented_devices = {node["device_id"] for node in node_rows}
+    for device_id, name, room, _ in registry_devices:
+        if device_id in hidden_device_ids or device_id in represented_devices:
+            continue
         node_rows.append(
             {
-                "label": _label(n),
-                "id": str(n.get("id")),
-                "device_id": found[0] if found else None,
-                "room": found[2] if found and found[2] else _t(request).network.unassigned_room,
-                "kind": kind,
-                "role": role_name,
-                "icon_role": icon_role,
-                "network": node_network_name(n),
-                "address": n.get("ext_address") or n.get("bssid"),
+                "label": name,
+                "id": f"registry:{device_id}",
+                "device_id": device_id,
+                "room": room or network_text.unassigned_room,
+                "role": network_text.no_topology_entry,
+                "icon_role": "unknown",
+                "network": None,
+                "address": None,
             }
         )
-    device_ids_by_node = {n["id"]: n["device_id"] for n in node_rows}
+
+    nodes_by_name: dict[str, list[dict]] = {}
+    for node in node_rows:
+        nodes_by_name.setdefault(node["label"], []).append(node)
+    for name, same_name in nodes_by_name.items():
+        if len(same_name) < 2:
+            continue
+        for number, node in enumerate(
+            sorted(
+                same_name,
+                key=lambda row: (str(row["address"] or row["id"]).casefold(), row["id"]),
+            ),
+            start=1,
+        ):
+            node["label"] = f"{name} ({number})"
+
     link_rows = []
     for c in (topology or {}).get("connections") or []:
-        src, dst = nodes_by_id.get(c.get("source")), nodes_by_id.get(c.get("target"))
+        src, dst = topology_rows.get(c.get("source")), topology_rows.get(c.get("target"))
         if src is None or dst is None:
             continue
         network = c.get("network")
@@ -952,12 +1010,12 @@ def network_view(request: Request, session: Session = Depends(get_session), view
             lqi_level = min(lqi, 3) if lqi is not None else None
         link_rows.append(
             {
-                "source": _label(src),
-                "target": _label(dst),
-                "source_id": str(c.get("source")),
-                "target_id": str(c.get("target")),
-                "source_device_id": device_ids_by_node.get(str(c.get("source"))),
-                "target_device_id": device_ids_by_node.get(str(c.get("target"))),
+                "source": src["label"],
+                "target": dst["label"],
+                "source_id": src["id"],
+                "target_id": dst["id"],
+                "source_device_id": src["device_id"],
+                "target_device_id": dst["device_id"],
                 "network": network,
                 "lqi_level": lqi_level,
                 "rssi": rssi,
@@ -978,8 +1036,8 @@ def network_view(request: Request, session: Session = Depends(get_session), view
     readings_by_node: dict[str, list[int]] = {node["id"]: [] for node in node_rows}
     for connection in (topology or {}).get("connections") or []:
         if (
-            connection.get("source") not in nodes_by_id
-            or connection.get("target") not in nodes_by_id
+            connection.get("source") not in topology_rows
+            or connection.get("target") not in topology_rows
         ):
             continue
         for endpoint, direction in (
@@ -1110,10 +1168,19 @@ def product_new(request: Request):
             product=None,
             links=[],
             protocols=list(DeviceProtocol),
+            device_type_options=_DEVICE_TYPE_OPTIONS,
             link_kinds=list(ProductLinkKind),
             device_count=0,
         ),
     )
+
+
+def _parse_product_device_type(protocol: DeviceProtocol | None, value: str | None) -> int | None:
+    if value is None or value in {"", "none"}:
+        return None
+    parsed = _parse_vid_pid(value)
+    validate_product_device_type(protocol, parsed if parsed is not None else value)
+    return parsed
 
 
 @router.post("/products")
@@ -1125,6 +1192,7 @@ def product_create(
     model: str = Form(""),
     vendor_id: str = Form(""),
     product_id: str = Form(""),
+    device_type_id: str | None = Form(None),
     description: str = Form(""),
     link_kind: list[str] = Form(default=[]),
     link_url: list[str] = Form(default=[]),
@@ -1132,13 +1200,19 @@ def product_create(
     link_alt: list[str] = Form(default=[]),
     session: Session = Depends(get_session),
 ):
+    selected_protocol = DeviceProtocol(protocol) if protocol else None
+    try:
+        selected_type = _parse_product_device_type(selected_protocol, device_type_id)
+    except ValueError as exc:
+        return HTMLResponse(str(exc), status_code=422)
     product = Product(
         name=name,
-        protocol=DeviceProtocol(protocol) if protocol else None,
+        protocol=selected_protocol,
         vendor=vendor or None,
         model=model or None,
         vendor_id=_parse_vid_pid(vendor_id),
         product_id=_parse_vid_pid(product_id),
+        device_type_id=selected_type,
         description=description or None,
     )
     for field in PRODUCT_SOURCED_FIELDS:
@@ -1205,14 +1279,26 @@ def product_dcl_lookup(id: str, request: Request, session: Session = Depends(get
         or product.product_id is None
     ):
         return HTMLResponse("DCL lookup needs a Matter product with vendor and product ID", 400)
+    lookup_ids = (product.vendor_id, product.product_id)
+    session.rollback()
     try:
-        model, vendor = csa.fetch(product.vendor_id, product.product_id)
+        model, vendor = csa.fetch(*lookup_ids)
     except csa.DclError as exc:
         logger.warning("CSA DCL lookup failed for product %s: %s", id, exc)
         status = "error"
     else:
         status = "none"
         if model is not None:
+            # Read current provenance under a write lock after the network request.
+            session.execute(text("BEGIN IMMEDIATE"))
+            product = session.get(Product, id)
+            if product is None:
+                return HTMLResponse("Product not found", status_code=404)
+            if (
+                product.protocol != DeviceProtocol.matter
+                or (product.vendor_id, product.product_id) != lookup_ids
+            ):
+                return HTMLResponse("Product identity changed during the DCL lookup", 409)
             if csa.apply(session, product, model, vendor):
                 product.updated_at = datetime.now(UTC)
                 session.add(product)
@@ -1246,6 +1332,7 @@ def product_edit(id: str, request: Request, session: Session = Depends(get_sessi
             product=product,
             links=links,
             protocols=list(DeviceProtocol),
+            device_type_options=_DEVICE_TYPE_OPTIONS,
             link_kinds=list(ProductLinkKind),
             device_count=device_count,
         ),
@@ -1262,6 +1349,7 @@ def product_update(
     model: str = Form(""),
     vendor_id: str = Form(""),
     product_id: str = Form(""),
+    device_type_id: str | None = Form(None),
     description: str = Form(""),
     link_kind: list[str] = Form(default=[]),
     link_url: list[str] = Form(default=[]),
@@ -1276,6 +1364,10 @@ def product_update(
         return HTMLResponse("Product not found", status_code=404)
 
     new_protocol = DeviceProtocol(protocol) if protocol else None
+    try:
+        selected_type = _parse_product_device_type(new_protocol, device_type_id)
+    except ValueError as exc:
+        return HTMLResponse(str(exc), status_code=422)
     if product.protocol != new_protocol:
         product.protocol = new_protocol
 
@@ -1287,6 +1379,8 @@ def product_update(
         "product_id": _parse_vid_pid(product_id),
         "description": description or None,
     }
+    if device_type_id is not None or new_protocol != DeviceProtocol.matter:
+        submitted["device_type_id"] = selected_type
     for field, value in submitted.items():
         if getattr(product, field) != value:
             set_product_field(product, field, value, FieldSource.user)

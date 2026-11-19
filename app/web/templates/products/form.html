@@ -43,12 +43,28 @@
         </div>
 
         <div>
-          <label class="block text-sm font-medium text-gray-700 mb-1">{{ t.product.form.protocol_label }}</label>
-          <select name="protocol"
+          <label for="mr-product-protocol" class="block text-sm font-medium text-gray-700 mb-1">{{ t.product.form.protocol_label }}</label>
+          <select name="protocol" id="mr-product-protocol"
                   class="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
             <option value="" {% if not (product and product.protocol) %}selected{% endif %}>{{ t.product.form.protocol_none }}</option>
             {% for p in protocols %}
             <option value="{{ p.value }}" {% if product and product.protocol == p %}selected{% endif %}>{{ p.label }}</option>
+            {% endfor %}
+          </select>
+        </div>
+
+        {% set is_matter = product and product.protocol == 'matter' %}
+        {% set type_id = product.device_type_id if product else none %}
+        <div id="mr-product-device-type-field" {% if not is_matter %}hidden{% endif %}>
+          <label for="mr-product-device-type" class="block text-sm font-medium text-gray-700 mb-1">{{ t.product.device_type.label }}{{ src_hint(product.device_type_id_source if product else none) }}</label>
+          <select name="device_type_id" id="mr-product-device-type" {% if not is_matter %}disabled{% endif %}
+                  class="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+            <option value="none" {% if type_id is none %}selected{% endif %}>{{ t.product.device_type.none }}</option>
+            {% if type_id and type_id not in device_type_options %}
+            <option value="{{ type_id }}" selected>{{ type_id | matter_device_type(t.product.device_type.unknown) }}</option>
+            {% endif %}
+            {% for option in device_type_options %}
+            <option value="{{ option }}" {% if type_id == option %}selected{% endif %}>{{ option | matter_device_type(t.product.device_type.unknown) }}</option>
             {% endfor %}
           </select>
         </div>
@@ -117,6 +133,17 @@
 
 <script>
 (function () {
+  const protocol = document.getElementById('mr-product-protocol');
+  const deviceTypeField = document.getElementById('mr-product-device-type-field');
+  const deviceType = document.getElementById('mr-product-device-type');
+  function updateDeviceType() {
+    const isMatter = protocol.value === 'matter';
+    deviceTypeField.hidden = !isMatter;
+    deviceType.disabled = !isMatter;
+  }
+  protocol.addEventListener('change', updateDeviceType);
+  updateDeviceType();
+
   window.mrAddProductLinkRow = function () {
     var tpl = document.getElementById('mr-product-link-template');
     var container = document.getElementById('mr-product-links');

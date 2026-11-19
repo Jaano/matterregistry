@@ -383,6 +383,10 @@ settings:
       error: "エラー"
 
 product:
+  device_type:
+    label: "Matter デバイスタイプ"
+    none: "未設定"
+    unknown: "不明なデバイスタイプ"
   list:
     title: "製品"
     new_btn: "+ 新しい製品"
@@ -512,6 +516,7 @@ network:
   wifi_link_legend: "Wi-Fi リンク"
   diagram_desc: "保存された接続を部屋ごとに表示します。"
   unassigned_room: "未割り当て"
+  no_topology_entry: "保存されたトポロジーに登録なし"
   empty_nodes: "保存されたトポロジーにノードがありません。"
   title: "ネットワーク"
   topology_heading: "トポロジー"

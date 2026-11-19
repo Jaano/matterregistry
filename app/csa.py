@@ -14,7 +14,8 @@ from typing import Any
 import httpx
 from sqlmodel import Session, col, select
 
-from .models import FieldSource, Product, ProductLink, ProductLinkKind
+from .matter_device_types import is_matter_device_type_id
+from .models import DeviceProtocol, FieldSource, Product, ProductLink, ProductLinkKind
 from .services import set_product_field
 
 DCL_BASE_URL = "https://on.dcl.csa-iot.org"
@@ -34,6 +35,7 @@ class DclModel:
     product_url: str | None
     support_url: str | None
     manual_url: str | None
+    device_type_id: int | None = None
 
 
 @dataclass(frozen=True)
@@ -67,6 +69,7 @@ def lookup_model(client: httpx.Client, vendor_id: int, product_id: int) -> DclMo
     model = body.get("model") if body else None
     if not isinstance(model, dict):
         return None
+    device_type_id = model.get("deviceTypeId")
     return DclModel(
         product_name=_text(model.get("productName")),
         product_label=_text(model.get("productLabel")),
@@ -74,6 +77,7 @@ def lookup_model(client: httpx.Client, vendor_id: int, product_id: int) -> DclMo
         product_url=_text(model.get("productUrl")),
         support_url=_text(model.get("supportUrl")),
         manual_url=_text(model.get("userManualUrl")),
+        device_type_id=device_type_id if is_matter_device_type_id(device_type_id) else None,
     )
 
 
@@ -123,6 +127,10 @@ def apply(session: Session, product: Product, model: DclModel, vendor: DclVendor
         changed |= set_product_field(product, "name", model.product_name, FieldSource.dcl)
     if model.part_number:
         changed |= set_product_field(product, "model", model.part_number, FieldSource.dcl)
+    if product.protocol == DeviceProtocol.matter and is_matter_device_type_id(model.device_type_id):
+        changed |= set_product_field(
+            product, "device_type_id", model.device_type_id, FieldSource.dcl
+        )
     if changed:
         session.add(product)
 
@@ -147,7 +155,7 @@ def apply(session: Session, product: Product, model: DclModel, vendor: DclVendor
                 product_record_id=product.id,
                 kind=kind,
                 url=url,
-                label="CSA DCL",
+                label=url,
                 position=position,
             )
         )

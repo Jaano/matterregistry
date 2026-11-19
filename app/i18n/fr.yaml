@@ -383,6 +383,10 @@ settings:
       error: "erreur"
 
 product:
+  device_type:
+    label: "Type d’appareil Matter"
+    none: "Non défini"
+    unknown: "Type d’appareil inconnu"
   list:
     title: "Produits"
     new_btn: "+ Nouveau produit"
@@ -512,6 +516,7 @@ network:
   wifi_link_legend: "Liaison Wi-Fi"
   diagram_desc: "Connexions enregistrées regroupées par pièce."
   unassigned_room: "Non attribué"
+  no_topology_entry: "Aucune entrée dans la topologie enregistrée"
   empty_nodes: "Aucun nœud dans la topologie enregistrée."
   title: "Réseau"
   topology_heading: "Topologie"

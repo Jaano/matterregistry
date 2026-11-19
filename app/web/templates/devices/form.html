@@ -20,7 +20,7 @@
       <h2 class="text-lg font-semibold">{{ t.device.form.basics_heading }}</h2>
       <p class="text-sm mt-1 mb-6" style="color:var(--mr-text-quiet)">{{ t.device.form.basics_desc }}</p>
       <label for="new-device-name" class="block text-sm font-medium mb-1">{{ t.device.form.name_label }} <span class="text-red-500">*</span></label>
-      <input id="new-device-name" type="text" name="name" required autofocus
+      <input id="new-device-name" type="text" name="name" value="{{ submitted_name }}" required {% if not scan_error %}autofocus{% endif %}
              class="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
 
       <label for="new-device-product" class="block text-sm font-medium mt-5 mb-1">{{ t.device.form.product_picker_label }} {{ t.device.form.scan_optional }}</label>
@@ -28,19 +28,20 @@
              aria-label="{{ t.device.form.product_search }}" class="w-full border border-gray-300 rounded px-3 py-2 text-sm mb-2">
       <select id="new-device-product" name="product_record_id" class="w-full border border-gray-300 rounded px-3 py-2 text-sm">
         <option value="">{{ t.device.form.product_none }}</option>
-        {% for p in products %}<option value="{{ p.id }}">{{ p.vendor ~ ' - ' if p.vendor }}{{ p.name }}{{ ' (' ~ p.model ~ ')' if p.model }}</option>{% endfor %}
+        {% for p in products %}<option value="{{ p.id }}"{% if p.id == submitted_product_id %} selected{% endif %}>{{ p.vendor ~ ' - ' if p.vendor }}{{ p.name }}{{ ' (' ~ p.model ~ ')' if p.model }}</option>{% endfor %}
       </select>
       <p class="mt-2 text-xs"><a href="{{ url('/products/new') }}" style="color:var(--mr-primary)">{{ t.device.form.product_new_link }}</a></p>
 
       <div class="mt-7 pt-5" style="border-top:1px solid var(--mr-border)">
       <h2 class="text-lg font-semibold mb-1">{{ t.device.form.scan_heading }} <span class="text-sm font-normal" style="color:var(--mr-text-quiet)">{{ t.device.form.scan_optional }}</span></h2>
       <p class="text-sm mb-4" style="color:var(--mr-text-quiet)">{{ t.device.form.scan_desc }}</p>
+      {% if scan_error %}
+      <p id="new-device-scan-error" role="alert" class="mb-4 p-3 bg-red-50 border border-red-200 rounded text-sm text-red-700">{{ scan_error }}</p>
+      {% endif %}
       {% set scan_mode = "new" %}
       {% include "devices/_scan_block.html" %}
       </div>
     </div>
-
-    <input type="hidden" name="qr_payload" id="new-device-qr-payload" value="">
 
     <div class="mr-form-actions">
       <a href="{{ url('/devices') }}" class="mr-btn">{{ t.device.form.cancel }}</a>

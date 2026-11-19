@@ -233,8 +233,8 @@ def decode_setup_payload(raw: str) -> SetupPayload:
 
     try:
         data = _b38_decode(encoded.upper())
-    except ValueError:
-        raise
+    except OverflowError as exc:
+        raise ValueError("Out-of-range base-38 value in Matter setup payload") from exc
 
     if len(data) < 11:
         raise ValueError(f"Decoded payload too short: {len(data)} bytes, expected ≥11")

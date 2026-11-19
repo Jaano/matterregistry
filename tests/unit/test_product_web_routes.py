@@ -18,10 +18,12 @@ from types import SimpleNamespace
 
 import pytest
 from fastapi.testclient import TestClient
+from markupsafe import escape
 from sqlmodel import Session, SQLModel, create_engine, select
 
 from app.app import create_app
 from app.database import get_session
+from app.matter import decode_setup_payload
 from app.models import (
     Device,
     DeviceProtocol,
@@ -32,6 +34,10 @@ from app.models import (
     Property,
     PropertyType,
 )
+from app.services import apply_scan_payload
+
+MATTER_PAYLOAD = "MT:-24J0AFN00KA0648G00"
+HOMEKIT_PAYLOAD = "X-HM://00527Y8011A2B"
 
 
 @pytest.fixture
@@ -93,6 +99,124 @@ def test_new_device_form_is_single_column_and_accepts_product(client: TestClient
     with Session(_engine(client)) as session:
         device = session.exec(select(Device).where(Device.name == "Hall hub")).one()
         assert device.product_record_id == product_id
+
+
+@pytest.mark.parametrize(
+    ("payload", "error"),
+    [
+        ('<img src=x onerror="alert(1)">', "Unrecognised payload prefix"),
+        ("MT:-----", "Out-of-range base-38 value"),
+        ("X-HM://SHORT", "too short"),
+    ],
+)
+def test_new_device_invalid_scan_keeps_form_and_creates_nothing(
+    client: TestClient, payload: str, error: str, caplog: pytest.LogCaptureFixture
+):
+    caplog.set_level("INFO", logger="matterregistry.audit")
+    name = 'Hall "lamp" & sensor'
+    response = client.post(
+        "/devices", data={"name": name, "qr_payload": payload}, follow_redirects=False
+    )
+
+    assert response.status_code == 400
+    assert 'id="new-device-scan-error" role="alert"' in response.text
+    assert error in response.text
+    assert f'value="{escape(name)}"' in response.text
+    assert f'value="{escape(payload)}"' in response.text
+    assert 'aria-describedby="new-device-scan-error"' in response.text
+    assert "action=device.create" not in caplog.text
+    assert "action=device.scan" not in caplog.text
+    with Session(_engine(client)) as session:
+        for model in (Device, Product, Property):
+            assert session.exec(select(model)).first() is None
+
+
+@pytest.mark.parametrize(
+    ("protocol", "wrong_payload", "valid_payload"),
+    [
+        (DeviceProtocol.matter, HOMEKIT_PAYLOAD, MATTER_PAYLOAD),
+        (DeviceProtocol.homekit, MATTER_PAYLOAD, HOMEKIT_PAYLOAD),
+    ],
+)
+def test_new_device_protocol_conflict_keeps_selected_product_and_allows_retry(
+    client: TestClient, protocol: DeviceProtocol, wrong_payload: str, valid_payload: str
+):
+    with Session(_engine(client)) as session:
+        sku = decode_setup_payload(MATTER_PAYLOAD)
+        product = Product(
+            name="Selected Product",
+            protocol=protocol,
+            vendor_id=sku.vendor_id if protocol == DeviceProtocol.matter else None,
+            product_id=sku.product_id if protocol == DeviceProtocol.matter else None,
+        )
+        session.add(product)
+        session.commit()
+        product_id = product.id
+
+    data = {"name": "Hall lamp", "product_record_id": product_id, "qr_payload": wrong_payload}
+    response = client.post("/devices", data=data, follow_redirects=False)
+    assert response.status_code == 409
+    assert f"The selected Product uses {protocol.label}" in response.text
+    assert f'<option value="{product_id}" selected>' in response.text
+    assert f'value="{wrong_payload}"' in response.text
+    with Session(_engine(client)) as session:
+        assert session.exec(select(Device)).first() is None
+        assert session.exec(select(Property)).first() is None
+        assert session.exec(select(Product)).one().protocol == protocol
+
+    data["qr_payload"] = valid_payload
+    response = client.post("/devices", data=data, follow_redirects=False)
+    assert response.status_code == 303
+    with Session(_engine(client)) as session:
+        device = session.exec(select(Device)).one()
+        assert device.product_record_id == product_id
+        assert session.exec(select(Product)).one().id == product_id
+        properties = {p.type: p.value for p in device.properties}
+        assert properties[PropertyType.qr_payload] == valid_payload
+        assert properties[PropertyType.manual_code]
+
+
+@pytest.mark.parametrize(
+    ("protocol", "payload"),
+    [(DeviceProtocol.matter, MATTER_PAYLOAD), (DeviceProtocol.homekit, HOMEKIT_PAYLOAD)],
+)
+def test_new_device_scan_resolves_one_product_without_placeholder(
+    client: TestClient, protocol: DeviceProtocol, payload: str
+):
+    response = client.post(
+        "/devices",
+        data={"name": "Scanned lamp", "qr_payload": payload},
+        follow_redirects=False,
+    )
+    assert response.status_code == 303
+    with Session(_engine(client)) as session:
+        device = session.exec(select(Device)).one()
+        assert response.headers["location"] == f"/devices/{device.id}"
+        product = session.exec(select(Product)).one()
+        assert device.product_record_id == product.id
+        assert product.protocol == protocol
+        assert {p.type: p.value for p in device.properties}[PropertyType.qr_payload] == payload
+
+
+def test_new_device_scan_failure_rolls_back_flushed_device_and_scan(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+):
+    def fail_after_scan(session: Session, device: Device, payload: str):
+        apply_scan_payload(session, device, payload)
+        session.flush()
+        raise ValueError("Fixture scan validation failed")
+
+    monkeypatch.setattr("app.services.apply_scan_payload", fail_after_scan)
+    response = client.post(
+        "/devices",
+        data={"name": "Failed lamp", "qr_payload": MATTER_PAYLOAD},
+        follow_redirects=False,
+    )
+    assert response.status_code == 400
+    assert "Fixture scan validation failed" in response.text
+    with Session(_engine(client)) as session:
+        for model in (Device, Product, Property):
+            assert session.exec(select(model)).first() is None
 
 
 def test_refreshed_list_filters_views_and_quick_search(client: TestClient):
@@ -184,6 +308,11 @@ def test_device_results_actions_survive_filter_swap(client: TestClient):
 
 
 def test_product_create_list_detail_and_links(client: TestClient):
+    new = client.get("/products/new")
+    assert new.status_code == 200
+    assert re.search(r'<div id="mr-product-device-type-field"\s+hidden>', new.text)
+    assert "On/Off Plug-in Unit (0x010A)" in new.text
+
     r = client.post(
         "/products",
         data={
@@ -193,6 +322,7 @@ def test_product_create_list_detail_and_links(client: TestClient):
             "model": "M2",
             "vendor_id": "0xFFF1",
             "product_id": "0x8001",
+            "device_type_id": "266",
             "description": "A hub",
             "link_kind": ["homepage", "image"],
             "link_url": ["https://example.com/hub", "https://example.com/hub.png"],
@@ -209,18 +339,114 @@ def test_product_create_list_detail_and_links(client: TestClient):
         assert product is not None
         assert product.vendor == "Aqara"
         assert product.vid_pid_display == "0xFFF1 / 0x8001"
+        assert product.device_type_id == 0x010A
+        assert product.device_type_id_source is FieldSource.user
         assert len(product.links) == 2
 
     detail = client.get(f"/products/{product_id}")
     assert detail.status_code == 200
     assert "Aqara Hub" in detail.text
     assert "example.com/hub" in detail.text
+    assert "On/Off Plug-in Unit (0x010A)" in detail.text
 
     listing = client.get("/products")
     assert "Aqara Hub" in listing.text
 
     filtered = client.get("/products", params={"protocol": "homekit"})
     assert "Aqara Hub" not in filtered.text
+
+
+def test_product_editor_preserves_unknown_type_and_can_clear_it(client: TestClient):
+    with Session(_engine(client)) as session:
+        product = Product(
+            name="Future Product",
+            protocol=DeviceProtocol.matter,
+            device_type_id=0xFFF10001,
+            device_type_id_source=FieldSource.dcl,
+        )
+        session.add(product)
+        session.commit()
+        product_id = product.id
+
+    path = f"/products/{product_id}"
+    detail = client.get(path)
+    assert "Unknown device type (0xFFF10001)" in detail.text
+    assert 'title="CSA DCL">CSA DCL</span>' in detail.text
+    edit = client.get(f"{path}/edit")
+    assert f'<option value="{0xFFF10001}" selected>Unknown device type (0xFFF10001)' in edit.text
+
+    fields = {"name": "Future Product", "protocol": "matter"}
+    for data in [fields, {**fields, "device_type_id": str(0xFFF10001)}]:
+        response = client.post(path, data=data, follow_redirects=False)
+        assert response.status_code == 303
+        record = client.get(f"/api{path}").json()
+        assert record["device_type_id"] == 0xFFF10001
+        assert record["sources"]["device_type_id"] == "dcl"
+
+    for protocol, device_type_id in [("homekit", "266"), ("matter", "bad"), ("matter", "0")]:
+        response = client.post(
+            path,
+            data={**fields, "protocol": protocol, "device_type_id": device_type_id},
+            follow_redirects=False,
+        )
+        assert response.status_code == 422
+    assert client.get(f"/api{path}").json()["device_type_id"] == 0xFFF10001
+
+    response = client.post(path, data={**fields, "device_type_id": "none"}, follow_redirects=False)
+    assert response.status_code == 303
+    record = client.get(f"/api{path}").json()
+    assert record["device_type_id"] is None
+    assert record["sources"]["device_type_id"] == "user"
+    assert "Unknown device type" not in client.get(path).text
+
+
+def test_api_product_type_round_trip_and_protocol_change(client: TestClient):
+    response = client.post(
+        "/api/products",
+        json={"name": "Future Product", "protocol": "matter", "device_type_id": 0xFFF10001},
+    )
+    assert response.status_code == 201
+    record = response.json()
+    assert record["device_type_id"] == 0xFFF10001
+    assert record["sources"]["device_type_id"] == "user"
+    path = f"/api/products/{record['id']}"
+    assert client.get(path).json()["device_type_id"] == 0xFFF10001
+
+    response = client.patch(path, json={"device_type_id": None})
+    assert response.status_code == 200
+    assert response.json()["device_type_id"] is None
+    response = client.patch(path, json={"device_type_id": 0x010A})
+    assert response.status_code == 200
+    assert response.json()["device_type_id"] == 0x010A
+
+    response = client.patch(path, json={"protocol": "homekit", "device_type_id": 0x010A})
+    assert response.status_code == 422
+    assert client.get(path).json()["device_type_id"] == 0x010A
+    response = client.patch(path, json={"protocol": "homekit"})
+    assert response.status_code == 200
+    assert response.json()["device_type_id"] is None
+    assert response.json()["protocol"] == "homekit"
+
+
+@pytest.mark.parametrize(
+    ("protocol", "type_id"),
+    [
+        (None, 266),
+        ("homekit", 266),
+        ("matter", 0),
+        ("matter", -1),
+        ("matter", 0x100000000),
+        ("matter", True),
+        ("matter", "266"),
+        ("matter", 266.0),
+    ],
+)
+def test_api_rejects_invalid_product_type(client: TestClient, protocol, type_id):
+    response = client.post(
+        "/api/products", json={"name": "Product", "protocol": protocol, "device_type_id": type_id}
+    )
+    assert response.status_code == 422
+    assert client.get("/api/products").json() == []
 
 
 def test_product_card_has_separate_product_and_device_links(client: TestClient):
@@ -402,6 +628,10 @@ def test_product_merge_preview_and_confirm(client: TestClient):
         source = Product(
             name="Aqara Hub M2",
             protocol=DeviceProtocol.matter,
+            vendor_id=0xFFF1,
+            product_id=0x8001,
+            device_type_id=0xFFF10001,
+            device_type_id_source=FieldSource.dcl,
             vendor="Aqara",
             vendor_source=FieldSource.user,
             description="Old description",
@@ -412,6 +642,7 @@ def test_product_merge_preview_and_confirm(client: TestClient):
             protocol=DeviceProtocol.matter,
             model="M2",
             model_source=FieldSource.user,
+            device_type_id_source=FieldSource.user,
         )
         session.add(source)
         session.add(target)
@@ -434,6 +665,7 @@ def test_product_merge_preview_and_confirm(client: TestClient):
     preview = client.get(f"/products/{source_id}/merge", params={"target_id": target_id})
     assert preview.status_code == 200
     assert "Old description" in preview.text
+    assert "Unknown device type (0xFFF10001)" in preview.text
 
     r = client.post(
         f"/products/{source_id}/merge", data={"target_id": target_id}, follow_redirects=False
@@ -450,6 +682,9 @@ def test_product_merge_preview_and_confirm(client: TestClient):
         assert target.model == "M2"
         assert target.vendor == "Aqara"
         assert target.description == "Old description"
+        assert target.vid_pid_display == "0xFFF1 / 0x8001"
+        assert target.device_type_id == 0xFFF10001
+        assert target.device_type_id_source is FieldSource.dcl
 
         device = session.get(Device, device_id)
         assert device is not None
@@ -459,6 +694,14 @@ def test_product_merge_preview_and_confirm(client: TestClient):
             select(ProductLink).where(ProductLink.product_record_id == target_id)
         ).all()
         assert len(links) == 1
+
+
+def test_product_cannot_merge_into_itself(client: TestClient):
+    product = client.post("/api/products", json={"name": "Keep me", "protocol": "matter"})
+    product_id = product.json()["id"]
+    response = client.post(f"/products/{product_id}/merge", data={"target_id": product_id})
+    assert response.status_code == 409
+    assert client.get(f"/api/products/{product_id}").status_code == 200
 
 
 def test_product_merge_rejects_mismatched_protocol(client: TestClient):

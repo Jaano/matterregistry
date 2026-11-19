@@ -383,6 +383,10 @@ settings:
       error: "Fehler"
 
 product:
+  device_type:
+    label: "Matter-Gerätetyp"
+    none: "Nicht festgelegt"
+    unknown: "Unbekannter Gerätetyp"
   list:
     title: "Produkte"
     new_btn: "+ Neues Produkt"
@@ -512,6 +516,7 @@ network:
   wifi_link_legend: "WLAN-Verbindung"
   diagram_desc: "Gespeicherte Verbindungen nach Raum gruppiert."
   unassigned_room: "Nicht zugewiesen"
+  no_topology_entry: "Kein Eintrag in der gespeicherten Topologie"
   empty_nodes: "Keine Knoten in der gespeicherten Topologie."
   title: "Netzwerk"
   topology_heading: "Topologie"

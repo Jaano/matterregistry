@@ -383,6 +383,10 @@ settings:
       error: "erro"
 
 product:
+  device_type:
+    label: "Tipo de dispositivo Matter"
+    none: "Não definido"
+    unknown: "Tipo de dispositivo desconhecido"
   list:
     title: "Produtos"
     new_btn: "+ Novo produto"
@@ -512,6 +516,7 @@ network:
   wifi_link_legend: "Ligação Wi-Fi"
   diagram_desc: "Conexões salvas agrupadas por cômodo."
   unassigned_room: "Não atribuído"
+  no_topology_entry: "Sem entrada na topologia guardada"
   empty_nodes: "Não há nós na topologia salva."
   title: "Rede"
   topology_heading: "Topologia"

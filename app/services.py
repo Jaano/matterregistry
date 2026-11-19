@@ -46,7 +46,7 @@ from .models import (
 
 
 class ProtocolMismatchError(Exception):
-    """Raised when a scan's protocol differs from the device's existing onboarding code."""
+    """Raised when a scan conflicts with a Product protocol or existing onboarding code."""
 
 
 _DEVICE_PRODUCT_FIELD_MAP = {
@@ -255,8 +255,11 @@ def _onboarding_types_for_device(device: Device) -> set[PropertyType]:
 def _ensure_protocol_match(
     device: Device, incoming_protocol: DeviceProtocol, session: Session
 ) -> None:
-    """Raise ProtocolMismatchError if the device already has a stored onboarding
-    code whose protocol differs from *incoming_protocol*."""
+    """Require the incoming protocol to agree with the Device's commissioning identity."""
+    device_protocol = device.protocol
+    if device_protocol == incoming_protocol:
+        return
+
     onboarding_creds = session.exec(
         select(Property).where(
             Property.device_id == device.id,
@@ -265,13 +268,16 @@ def _ensure_protocol_match(
             ),
         )
     ).all()
-    if not onboarding_creds:
-        return
-    device_protocol = device.protocol
-    if device_protocol != incoming_protocol:
+    if onboarding_creds:
         raise ProtocolMismatchError(
             f"This device already has a {device_protocol.value if device_protocol else 'unknown'} setup code. "
             f"HomeKit and Matter codes cannot mix on the same device."
+        )
+    if device_protocol is not None:
+        raise ProtocolMismatchError(
+            f"The selected Product uses {device_protocol.label}, "
+            f"but this setup code uses {incoming_protocol.label}. "
+            "Choose a compatible Product or enter a different setup code."
         )
 
 
@@ -279,7 +285,7 @@ def apply_scan_payload(session: Session, device: Device, payload_str: str) -> No
     """Decode an MT: or X-HM:// string and persist properties + metadata on the device.
 
     Routing is by prefix: MT: → Matter, X-HM:// → HomeKit.
-    Cross-protocol scans on a device with an existing code are rejected.
+    The code must agree with the linked Product and any existing setup code.
     """
     raw = payload_str.strip()
     upper = raw.upper()
@@ -654,42 +660,35 @@ _PRODUCT_MERGE_PREVIEW_LABELS = [
     ("Model", "model"),
     ("Vendor ID", "vendor_id"),
     ("Product ID", "product_id"),
+    ("Matter device type", "device_type_id"),
     ("Description", "description"),
 ]
 
 
-def build_product_merge_preview(source: Product, target: Product) -> list[dict]:
-    """Return per-field preview of which value wins after a Product merge.
+def _product_merge_winner(source: Product, target: Product, field: str) -> str | None:
+    if getattr(source, field) is None:
+        return "target" if getattr(target, field) is not None else None
+    if getattr(target, field) is None:
+        return "source"
+    source_priority = FieldSource.priority(getattr(source, f"{field}_source"))
+    target_priority = FieldSource.priority(getattr(target, f"{field}_source"))
+    return "source" if source_priority > target_priority else "target"
 
-    Mirrors the priority policy `set_product_field` applies: for each
-    sourced field, the side whose provenance has equal-or-higher priority
-    wins; a blank target field always yields to a present source value.
-    """
+
+def build_product_merge_preview(source: Product, target: Product) -> list[dict]:
+    """Preview the values that a Product merge will keep."""
     rows = []
     for label, field in _PRODUCT_MERGE_PREVIEW_LABELS:
         sv = getattr(source, field)
         tv = getattr(target, field)
-        if tv is not None and sv is not None:
-            src_source = getattr(source, f"{field}_source", FieldSource.generated)
-            tgt_source = getattr(target, f"{field}_source", FieldSource.generated)
-            winner = (
-                "target"
-                if FieldSource.priority(tgt_source) >= FieldSource.priority(src_source)
-                else "source"
-            )
-        elif tv is not None:
-            winner = "target"
-        elif sv is not None:
-            winner = "source"
-        else:
-            winner = None
         rows.append(
             {
                 "label": label,
-                "source_val": str(sv) if sv is not None else None,
-                "target_val": str(tv) if tv is not None else None,
-                "winner": winner,
-                "conflict": sv is not None and tv is not None and str(sv) != str(tv),
+                "field": field,
+                "source_val": sv,
+                "target_val": tv,
+                "winner": _product_merge_winner(source, target, field),
+                "conflict": sv is not None and tv is not None and sv != tv,
             }
         )
     return rows
@@ -698,15 +697,16 @@ def build_product_merge_preview(source: Product, target: Product) -> list[dict]:
 def merge_products(session: Session, source_id: str, target_id: str) -> None:
     """Merge source Product into target, then delete source.
 
-    Policy: for each sourced field, keep whichever side's provenance has
-    equal-or-higher priority (via `set_product_field`); protocol has no
-    provenance column, so target wins when set, else source. All Devices
-    and ProductLinks referencing source are reassigned to target.
+    Populated fields beat blanks, then provenance decides, with ties going
+    to the target. The target keeps its protocol when set. All Devices and
+    ProductLinks referencing source are reassigned to target.
     """
     source = session.get(Product, source_id)
     target = session.get(Product, target_id)
     if source is None or target is None:
         raise ValueError("Product not found")
+    if source_id == target_id:
+        raise ProtocolMismatchError("Choose a different target product")
 
     if (
         source.protocol is not None
@@ -718,30 +718,28 @@ def merge_products(session: Session, source_id: str, target_id: str) -> None:
             f"{target.protocol.value} product - commissioning protocols must match."
         )
 
-    if target.protocol is None and source.protocol is not None:
-        target.protocol = source.protocol
-
-    for field in PRODUCT_SOURCED_FIELDS:
-        value = getattr(source, field)
-        if value is not None:
-            source_of_value = getattr(source, f"{field}_source", FieldSource.generated)
-            set_product_field(target, field, value, source_of_value)
-
-    target.updated_at = datetime.now(UTC)
-    session.add(target)
-
     for device in session.exec(select(Device).where(Device.product_record_id == source_id)).all():
-        device.product_record_id = target_id
-        session.add(device)
+        device.product_record = target
 
     for link in session.exec(
         select(ProductLink).where(ProductLink.product_record_id == source_id)
     ).all():
-        link.product_record_id = target_id
-        session.add(link)
+        link.product = target
 
     session.flush()
+    # Free the source's unique Matter VID/PID before assigning it to the target.
     session.delete(source)
+    session.flush()
+
+    if target.protocol is None:
+        target.protocol = source.protocol
+    for field in PRODUCT_SOURCED_FIELDS:
+        if _product_merge_winner(source, target, field) == "source":
+            setattr(target, field, getattr(source, field))
+            source_attr = f"{field}_source"
+            setattr(target, source_attr, getattr(source, source_attr))
+    target.updated_at = datetime.now(UTC)
+
     audit_log(
         session,
         action="product.merge",

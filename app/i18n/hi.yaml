@@ -383,6 +383,10 @@ settings:
       error: "त्रुटि"
 
 product:
+  device_type:
+    label: "Matter डिवाइस का प्रकार"
+    none: "सेट नहीं है"
+    unknown: "अज्ञात डिवाइस प्रकार"
   list:
     title: "उत्पाद"
     new_btn: "+ नया उत्पाद"
@@ -512,6 +516,7 @@ network:
   wifi_link_legend: "Wi-Fi लिंक"
   diagram_desc: "सहेजे गए कनेक्शन कमरों के अनुसार समूहित हैं।"
   unassigned_room: "असाइन नहीं किया गया"
+  no_topology_entry: "सहेजी गई टोपोलॉजी में कोई प्रविष्टि नहीं है"
   empty_nodes: "सहेजी गई टोपोलॉजी में कोई नोड नहीं है।"
   title: "नेटवर्क"
   topology_heading: "टोपोलॉजी"
